@@ -7,6 +7,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
+#include <aws/core/Aws.h>
+
+#include "blob_file_system.h"
+#include "rocksdb/cloud/cloud_file_system.h"
+#include "titan/blob_cloud.h"
+#include "titan/statistics.h"
+
 #ifdef GFLAGS
 #ifdef NUMA
 #include <numa.h>
@@ -23,12 +30,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
-#include <iostream>
 
 #include <atomic>
 #include <cinttypes>
 #include <condition_variable>
 #include <cstddef>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -755,6 +762,12 @@ DEFINE_uint64(blob_db_min_blob_size, 0,
 
 // Titan Options
 DEFINE_bool(use_titan, true, "Open a Titan instance.");
+
+DEFINE_bool(use_cloud, false, "Open a Cloud instance.");
+
+DEFINE_string(s3_bucket, "titan-benchmark", "S3 bucket name");
+
+DEFINE_string(s3_region, "ap-northeast-2", "S3 region");
 
 DEFINE_bool(titan_level_merge, false, "Enable Titan level merge.");
 
@@ -2480,6 +2493,12 @@ class Benchmark {
       exit(1);
     }
 
+    if (FLAGS_use_cloud) {
+      titandb::TitanCloudHelper::InitializeAWS(open_options_);
+      titandb::TitanCloudHelper::ConfigureBucket(open_options_, FLAGS_s3_bucket,
+                                                 FLAGS_s3_region, FLAGS_db);
+    }
+
     std::vector<std::string> files;
     FLAGS_env->GetChildren(FLAGS_db, &files);
     for (size_t i = 0; i < files.size(); i++) {
@@ -2498,6 +2517,9 @@ class Benchmark {
       }
 #endif  // !ROCKSDB_LITE
       DestroyDB(FLAGS_db, options);
+      if (FLAGS_use_cloud) {
+        titandb::TitanCloudHelper::DestroyCloudDB(FLAGS_db, options);
+      }
       if (!FLAGS_wal_dir.empty()) {
         FLAGS_env->DeleteDir(FLAGS_wal_dir);
       }
@@ -2519,6 +2541,9 @@ class Benchmark {
     if (cache_.get() != nullptr) {
       // this will leak, but we're shutting down so nobody cares
       cache_->DisownData();
+    }
+    if (FLAGS_use_cloud) {
+      titandb::TitanCloudHelper::ShutdownAWS(open_options_);
     }
   }
 
@@ -2908,6 +2933,10 @@ class Benchmark {
           if (db_.db != nullptr) {
             db_.DeleteDBs();
             DestroyDB(FLAGS_db, open_options_);
+            if (FLAGS_use_cloud) {
+              titandb::TitanCloudHelper::DestroyCloudDB(FLAGS_db,
+                                                        open_options_);
+            }
           }
           titandb::TitanOptions options = open_options_;
           for (size_t i = 0; i < multi_dbs_.size(); i++) {
@@ -2916,6 +2945,10 @@ class Benchmark {
               options.wal_dir = GetPathForMultiple(open_options_.wal_dir, i);
             }
             DestroyDB(GetPathForMultiple(FLAGS_db, i), options);
+            if (FLAGS_use_cloud) {
+              titandb::TitanCloudHelper::DestroyCloudDB(
+                  GetPathForMultiple(FLAGS_db, i), options);
+            }
           }
           multi_dbs_.clear();
         }
@@ -3809,6 +3842,18 @@ class Benchmark {
   void OpenDb(titandb::TitanOptions options, const std::string& db_name,
               DBWithColumnFamilies* db) {
     Status s;
+    if (FLAGS_use_cloud) {
+      s = CreateLoggerFromOptions(db_name, options, &options.info_log);
+      if (!s.ok()) {
+        fprintf(stderr, "Create logger error %s\n", s.ToString().c_str());
+        exit(1);
+      }
+      s = titandb::TitanCloudHelper::CreateCloudEnv(options);
+      if (!s.ok()) {
+        fprintf(stderr, "Create cloud env error %s\n", s.ToString().c_str());
+        exit(1);
+      }
+    }
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {
       size_t num_hot = FLAGS_num_column_families;
@@ -3868,6 +3913,18 @@ class Benchmark {
         if (s.ok()) {
           db->db = ptr;
         }
+      } else if (FLAGS_use_cloud) {
+        std::vector<titandb::TitanCFDescriptor> titan_column_families;
+        for (size_t i = 0; i < num_hot; i++) {
+          titan_column_families.push_back(titandb::TitanCFDescriptor(
+              ColumnFamilyName(i), titandb::TitanCFOptions(options)));
+        }
+        titandb::TitanDB* ptr;
+        s = titandb::TitanDB::OpenWithCloud(
+            options, db_name, titan_column_families, &db->cfh, &ptr);
+        if (s.ok()) {
+          db->db = ptr;
+        }
       } else if (FLAGS_use_titan) {
         std::vector<titandb::TitanCFDescriptor> titan_column_families;
         for (size_t i = 0; i < num_hot; i++) {
@@ -3924,6 +3981,16 @@ class Benchmark {
       blob_db_options.blob_file_size = FLAGS_blob_db_file_size;
       blob_db::BlobDB* ptr = nullptr;
       s = blob_db::BlobDB::Open(options, blob_db_options, db_name, &ptr);
+      if (s.ok()) {
+        db->db = ptr;
+      }
+    } else if (FLAGS_use_cloud) {
+      if (!titandb::TitanCloudHelper::IsCloudEnabled(options)) {
+        fprintf(stderr, "Titan cloud is not enabled\n");
+        exit(1);
+      }
+      titandb::TitanDB* ptr;
+      s = titandb::TitanDB::OpenWithCloud(options, db_name, &ptr);
       if (s.ok()) {
         db->db = ptr;
       }
@@ -6368,7 +6435,11 @@ int db_bench_tool(int argc, char** argv) {
   }
 #endif  // ROCKSDB_LITE
   if (FLAGS_statistics) {
-    dbstats = rocksdb::CreateDBStatistics();
+    if (!FLAGS_use_titan) {
+      dbstats = rocksdb::CreateDBStatistics();
+    } else {
+      dbstats = titandb::CreateDBStatistics();
+    }
   }
   if (dbstats) {
     dbstats->set_stats_level(static_cast<StatsLevel>(FLAGS_stats_level));

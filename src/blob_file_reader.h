@@ -1,8 +1,7 @@
 #pragma once
 
-#include "file/random_access_file_reader.h"
-
 #include "blob_format.h"
+#include "file/random_access_file_reader.h"
 #include "titan/options.h"
 #include "titan_stats.h"
 
@@ -49,6 +48,9 @@ class BlobFileReader {
   std::unique_ptr<UncompressionDict> uncompression_dict_ = nullptr;
 
   // TitanStats* stats_;
+
+  // Use rocksdb's FilePrefetchBuffer if filesystem's prefetch not supported
+  std::shared_ptr<FilePrefetchBuffer> prefetch_buffer_{nullptr};
 };
 
 // Performs readahead on continuous reads.

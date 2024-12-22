@@ -1,10 +1,9 @@
 #include "blob_file_iterator.h"
 
-#include "table/block_based/block_based_table_reader.h"
-#include "util/crc32c.h"
-
 #include "blob_file_reader.h"
+#include "table/block_based/block_based_table_reader.h"
 #include "util.h"
+#include "util/crc32c.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -15,7 +14,9 @@ BlobFileIterator::BlobFileIterator(
     : file_(std::move(file)),
       file_number_(file_name),
       file_size_(file_size),
-      titan_cf_options_(titan_cf_options) {}
+      titan_cf_options_(titan_cf_options),
+      prefetch_buffer_(std::make_unique<FilePrefetchBuffer>(
+          kMinReadaheadSize, kMaxReadaheadSize)) {}
 
 BlobFileIterator::~BlobFileIterator() {}
 
@@ -143,15 +144,26 @@ void BlobFileIterator::IterateForPrev(uint64_t offset) {
   valid_ = false;
 }
 
-void BlobFileIterator::GetBlobRecord() {
+void BlobFileIterator::PrefetchAndGet() {
+  if (iterate_offset_ >= end_of_blob_record_) {
+    valid_ = false;
+    return;
+  }
+
   FixedSlice<kRecordHeaderSize> header_buffer;
   // Since BlobFileIterator is only used for GC, we always set IO priority to
   // low.
   IOOptions io_options;
   io_options.rate_limiter_priority = Env::IOPriority::IO_LOW;
-  status_ =
-      file_->Read(io_options, iterate_offset_, kRecordHeaderSize,
-                  &header_buffer, header_buffer.get(), nullptr /*aligned_buf*/);
+  bool prefetched = prefetch_buffer_->TryReadFromCache(
+      io_options, file_.get(), iterate_offset_, kRecordHeaderSize,
+      &header_buffer, &status_);
+  if (!status_.ok()) return;
+  if (!prefetched) {
+    status_ = file_->Read(io_options, iterate_offset_, kRecordHeaderSize,
+                          &header_buffer, header_buffer.get(),
+                          nullptr /*aligned_buf*/);
+  }
   if (!status_.ok()) return;
   status_ = decoder_.DecodeHeader(&header_buffer);
   if (!status_.ok()) return;
@@ -159,9 +171,14 @@ void BlobFileIterator::GetBlobRecord() {
   Slice record_slice;
   auto record_size = decoder_.GetRecordSize();
   buffer_.resize(record_size);
-  status_ =
-      file_->Read(io_options, iterate_offset_ + kRecordHeaderSize, record_size,
-                  &record_slice, buffer_.data(), nullptr /*aligned_buf*/);
+  prefetched = prefetch_buffer_->TryReadFromCache(
+      io_options, file_.get(), iterate_offset_ + kRecordHeaderSize, record_size,
+      &record_slice, &status_);
+  if (!prefetched) {
+    status_ = file_->Read(io_options, iterate_offset_ + kRecordHeaderSize,
+                          record_size, &record_slice, buffer_.data(),
+                          nullptr /*aligned_buf*/);
+  }
   if (status_.ok()) {
     status_ =
         decoder_.DecodeRecord(&record_slice, &cur_blob_record_, &uncompressed_,
@@ -174,40 +191,6 @@ void BlobFileIterator::GetBlobRecord() {
   iterate_offset_ += cur_record_size_;
   AdjustOffsetToNextBlockHead();
   valid_ = true;
-}
-
-void BlobFileIterator::PrefetchAndGet() {
-  if (iterate_offset_ >= end_of_blob_record_) {
-    valid_ = false;
-    return;
-  }
-
-  if (readahead_begin_offset_ > iterate_offset_ ||
-      readahead_end_offset_ < iterate_offset_) {
-    // alignment
-    readahead_begin_offset_ =
-        iterate_offset_ - (iterate_offset_ & (kDefaultPageSize - 1));
-    readahead_end_offset_ = readahead_begin_offset_;
-    readahead_size_ = kMinReadaheadSize;
-  }
-  auto min_blob_size =
-      iterate_offset_ + kRecordHeaderSize + titan_cf_options_.min_blob_size;
-  if (readahead_end_offset_ <= min_blob_size) {
-    while (readahead_end_offset_ + readahead_size_ <= min_blob_size &&
-           readahead_size_ < kMaxReadaheadSize)
-      readahead_size_ <<= 1;
-    IOOptions io_options;
-    io_options.rate_limiter_priority = Env::IOPriority::IO_LOW;
-    file_->Prefetch(io_options, readahead_end_offset_, readahead_size_);
-    readahead_end_offset_ += readahead_size_;
-    readahead_size_ = std::min(kMaxReadaheadSize, readahead_size_ << 1);
-  }
-
-  GetBlobRecord();
-
-  if (readahead_end_offset_ < iterate_offset_) {
-    readahead_end_offset_ = iterate_offset_;
-  }
 }
 
 BlobFileMergeIterator::BlobFileMergeIterator(

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "rocksdb/utilities/stackable_db.h"
-
 #include "titan/options.h"
 
 namespace rocksdb {
@@ -27,6 +26,16 @@ class TitanDB : public StackableDB {
                      const std::string& dbname,
                      const std::vector<TitanCFDescriptor>& descs,
                      std::vector<ColumnFamilyHandle*>* handles, TitanDB** db);
+
+  static Status OpenWithCloud(const TitanOptions& options,
+                              const std::string& dbname, TitanDB** db,
+                              bool read_only = false);
+
+  static Status OpenWithCloud(const TitanOptions& options,
+                              const std::string& dbname,
+                              const std::vector<TitanCFDescriptor>& descs,
+                              std::vector<ColumnFamilyHandle*>* handles,
+                              TitanDB** db, bool read_only = false);
 
   TitanDB() : StackableDB(nullptr) {}
 

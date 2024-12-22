@@ -198,6 +198,7 @@ Status TitanDBImpl::ValidateOptions(
     }
   }
   return Status::OK();
+  // TODO(fjy): validate cloud options
 }
 
 Status TitanDBImpl::Open(const std::vector<TitanCFDescriptor>& descs,

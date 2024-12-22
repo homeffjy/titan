@@ -47,6 +47,21 @@ if (WITH_ZLIB)
   endif()
 endif()
 
+option(WITH_AWS "build with aws" OFF)
+if(WITH_AWS)
+  find_package(AWSSDK REQUIRED COMPONENTS s3 transfer kinesis)
+
+  # Debug prints
+  message(STATUS "AWS SDK Include Dirs: ${AWSSDK_INCLUDE_DIRS}")
+  message(STATUS "AWS SDK Libraries: ${AWSSDK_LIBRARIES}")
+
+  add_definitions(-DUSE_AWS)
+  include_directories(${AWS_INCLUDE_DIR})
+  list(APPEND THIRDPARTY_LIBS ${AWSSDK_LINK_LIBRARIES})
+endif()
+
+add_definitions(-DTITAN_MODS_ENABLED)
+
 option(WITH_ZSTD "build with zstd" OFF)
 if (WITH_ZSTD)
   find_package(zstd REQUIRED)

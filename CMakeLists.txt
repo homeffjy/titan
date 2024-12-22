@@ -154,6 +154,13 @@ if (WITH_TITAN_TESTS AND (CMAKE_BUILD_TYPE STREQUAL "Debug"))
         compaction_filter_test
         version_test)
 
+  if(WITH_AWS)
+    find_package(AWSSDK REQUIRED COMPONENTS s3 transfer kinesis)
+
+    list(APPEND TEST_LIBS ${AWSSDK_LINK_LIBRARIES})
+    list(APPEND TESTS blob_cloud_test blob_cloud_gc_job_test)
+  endif()
+
   foreach(test ${TESTS})
     add_executable(titan_${test} src/${test}.cc)
     target_link_libraries(titan_${test} ${TEST_LIBS})
@@ -187,10 +194,13 @@ if (WITH_TITAN_TOOLS)
   add_executable(titan_manifest_dump tools/manifest_dump.cc)
   target_include_directories(titan_manifest_dump PRIVATE ${GFLAGS_INCLUDE_DIR})
   target_link_libraries(titan_manifest_dump ${TOOLS_LIBS})
-  
+
   add_executable(titan_blob_file_dump tools/blob_file_dump.cc)
   target_include_directories(titan_blob_file_dump PRIVATE ${GFLAGS_INCLUDE_DIR})
   target_link_libraries(titan_blob_file_dump ${TOOLS_LIBS})
+
+  add_executable(simple_example tools/simple_example.cc)
+  target_link_libraries(simple_example ${TOOLS_LIBS})
 endif()
 
 # Installation - copy lib/ and include/

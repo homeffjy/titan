@@ -223,6 +223,7 @@ class TitanDBImpl : public TitanDB {
   class FileManager;
   friend class FileManager;
   friend class BlobGCJobTest;
+  friend class CloudGCJobTest;
   friend class BaseDbListener;
   friend class TitanDBTest;
   friend class TitanThreadSafetyTest;
