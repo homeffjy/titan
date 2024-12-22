@@ -23,7 +23,6 @@ class TitanRouterFileSystem : public CloudFileSystemImpl {
  public:
   struct Options : public CloudFileSystemOptions {
     std::shared_ptr<FileSystem> blob_fs;
-    std::string db_path;
   };
 
   static Status NewTitanRouterFileSystem(

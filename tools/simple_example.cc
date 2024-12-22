@@ -22,16 +22,11 @@ static const bool disableWAL = false;
 
 int main() {
   // cloud environment config options here
-  // rocksdb::CloudFileSystemOptions cloud_fs_options;
-  rocksdb::titandb::TitanRouterFileSystem::Options cloud_fs_options;
+  rocksdb::titandb::TitanRouterFileSystem::Options router_options;
 
-  // Store a reference to a cloud file system. A new cloud env object should be
-  // associated with every new cloud-db.
-  std::shared_ptr<rocksdb::FileSystem> cloud_fs;
-
-  cloud_fs_options.credentials.InitializeSimple(
+  router_options.credentials.InitializeSimple(
       getenv("AWS_ACCESS_KEY_ID"), getenv("AWS_SECRET_ACCESS_KEY"));
-  if (!cloud_fs_options.credentials.HasValid().ok()) {
+  if (!router_options.credentials.HasValid().ok()) {
     fprintf(
         stderr,
         "Please set env variables "
@@ -47,31 +42,36 @@ int main() {
 
   // "rockset." is the default bucket prefix
   const std::string bucketPrefix = "rockset.";
-  cloud_fs_options.src_bucket.SetBucketName(kBucketSuffix, bucketPrefix);
-  cloud_fs_options.dest_bucket.SetBucketName(kBucketSuffix, bucketPrefix);
+  router_options.src_bucket.SetBucketName(kBucketSuffix, bucketPrefix);
+  router_options.dest_bucket.SetBucketName(kBucketSuffix, bucketPrefix);
 
   // create a bucket name for debugging purposes
   const std::string bucketName = bucketPrefix + kBucketSuffix;
 
-  cloud_fs_options.blob_fs = cloud_fs;
-
   Aws::InitAPI(Aws::SDKOptions());
   // Create a new AWS cloud env Status
-  rocksdb::CloudFileSystem *cfs;
+  rocksdb::CloudFileSystem *blob_cfs;
   rocksdb::Status s = rocksdb::CloudFileSystemEnv::NewAwsFileSystem(
       rocksdb::FileSystem::Default(), kBucketSuffix, kDBPath, kRegion,
-      kBucketSuffix, kDBPath, kRegion, cloud_fs_options, nullptr, &cfs);
+      kBucketSuffix, kDBPath, kRegion, router_options, nullptr, &blob_cfs);
   if (!s.ok()) {
     fprintf(stderr, "Unable to create cloud env in bucket %s. %s\n",
             bucketName.c_str(), s.ToString().c_str());
     return -1;
   }
-  cloud_fs.reset(cfs);
+  std::shared_ptr<rocksdb::FileSystem> blob_cloud_fs(blob_cfs);
+  router_options.blob_fs = blob_cloud_fs;
+  auto base_fs = std::shared_ptr<rocksdb::FileSystem>(rocksdb::FileSystem::Default());
+
+  // Create TitanRouterFileSystem
+  std::unique_ptr<rocksdb::titandb::TitanRouterFileSystem> titan_router_file_system;
+  s = rocksdb::titandb::TitanRouterFileSystem::NewTitanRouterFileSystem(base_fs, router_options, nullptr, &titan_router_file_system);
+  assert(s.ok());
 
   // Create options and use the AWS file system that we created earlier
-  auto cloud_env = NewCompositeEnv(cloud_fs);
+  auto cloud_env = NewCompositeEnv(blob_cloud_fs);
   rocksdb::titandb::TitanOptions options;
-  // options.env = cloud_env.get();
+  options.env = cloud_env.get();
 
   // No persistent read-cache
   std::string persistent_cache = "";
