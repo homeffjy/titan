@@ -66,7 +66,8 @@ else()
 endif()
 string(REGEX REPLACE "[^0-9a-f]+" "" GIT_SHA "${GIT_SHA}")
 
-set(TITAN_BUILD_VERSION_CC ${CMAKE_BINARY_DIR}/titan_build_version.cc)
+set(TITAN_BUILD_VERSION_CC ${CMAKE_BINARY_DIR}/titan_build_version.cc
+        src/blob_file_system.h)
 configure_file(util/titan_build_version.cc.in ${TITAN_BUILD_VERSION_CC} @ONLY)
 add_library(titan_build_version OBJECT ${TITAN_BUILD_VERSION_CC})
 target_include_directories(titan_build_version PRIVATE
@@ -191,6 +192,9 @@ if (WITH_TITAN_TOOLS)
   add_executable(titan_blob_file_dump tools/blob_file_dump.cc)
   target_include_directories(titan_blob_file_dump PRIVATE ${GFLAGS_INCLUDE_DIR})
   target_link_libraries(titan_blob_file_dump ${TOOLS_LIBS})
+
+  add_executable(simple_example tools/simple_example.cc)
+  target_link_libraries(simple_example ${TOOLS_LIBS})
 endif()
 
 # Installation - copy lib/ and include/
