@@ -66,8 +66,7 @@ else()
 endif()
 string(REGEX REPLACE "[^0-9a-f]+" "" GIT_SHA "${GIT_SHA}")
 
-set(TITAN_BUILD_VERSION_CC ${CMAKE_BINARY_DIR}/titan_build_version.cc
-        src/blob_file_system.h)
+set(TITAN_BUILD_VERSION_CC ${CMAKE_BINARY_DIR}/titan_build_version.cc)
 configure_file(util/titan_build_version.cc.in ${TITAN_BUILD_VERSION_CC} @ONLY)
 add_library(titan_build_version OBJECT ${TITAN_BUILD_VERSION_CC})
 target_include_directories(titan_build_version PRIVATE
