@@ -1,8 +1,9 @@
 #include <aws/core/Aws.h>
-#include <rocksdb/cloud/cloud_file_system.h>
 
 #include <cassert>
 
+#include "blob_file_system.h"
+#include "rocksdb/cloud/cloud_file_system.h"
 #include "titan/db.h"
 
 // This is the local directory where the db is stored.
@@ -25,10 +26,10 @@ int main() {
 
   // Store a reference to a cloud file system. A new cloud env object should be
   // associated with every new cloud-db.
-  std::shared_ptr<rocksdb::FileSystem> cloud_fs;
+  std::shared_ptr<rocksdb::FileSystem> fs;
 
-  cloud_fs_options.credentials.InitializeSimple(getenv("AWS_ACCESS_KEY_ID"),
-                                              getenv("AWS_SECRET_ACCESS_KEY"));
+  cloud_fs_options.credentials.InitializeSimple(
+      getenv("AWS_ACCESS_KEY_ID"), getenv("AWS_SECRET_ACCESS_KEY"));
   if (!cloud_fs_options.credentials.HasValid().ok()) {
     fprintf(
         stderr,
@@ -53,19 +54,27 @@ int main() {
 
   Aws::InitAPI(Aws::SDKOptions());
   // Create a new AWS cloud env Status
-  rocksdb::CloudFileSystem *blob_cfs;
+  rocksdb::CloudFileSystem *cfs;
   rocksdb::Status s = rocksdb::CloudFileSystemEnv::NewAwsFileSystem(
       rocksdb::FileSystem::Default(), kBucketSuffix, kDBPath, kRegion,
-      kBucketSuffix, kDBPath, kRegion, cloud_fs_options, nullptr, &blob_cfs);
+      kBucketSuffix, kDBPath, kRegion, cloud_fs_options, nullptr, &cfs);
   if (!s.ok()) {
     fprintf(stderr, "Unable to create cloud env in bucket %s. %s\n",
             bucketName.c_str(), s.ToString().c_str());
     return -1;
   }
-  cloud_fs.reset(blob_cfs);
+
+  std::shared_ptr<rocksdb::CloudFileSystem> blob_cfs(cfs);
+  // Create TitanFileSystem
+  rocksdb::titandb::TitanFileSystem *titan_file_system;
+  s = rocksdb::titandb::TitanFileSystem::NewTitanFileSystem(
+      rocksdb::FileSystem::Default(), blob_cfs, &titan_file_system);
+  assert(s.ok());
+
+  fs.reset(titan_file_system);
 
   // Create options and use the AWS file system that we created earlier
-  auto cloud_env = rocksdb::NewCompositeEnv(cloud_fs);
+  auto cloud_env = rocksdb::NewCompositeEnv(fs);
   rocksdb::titandb::TitanOptions options;
   options.env = cloud_env.get();
 

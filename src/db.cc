@@ -1,5 +1,6 @@
 #include "titan/db.h"
 
+#include "blob_file_system.h"
 #include "cloud/db_cloud_impl.h"
 #include "db_impl.h"
 #include "env/composite_env_wrapper.h"
@@ -50,12 +51,9 @@ Status TitanDB::Open(const TitanOptions& opt, const std::string& dbname,
     CreateLoggerFromOptions(dbname, options, &options.info_log);
   }
 
-  auto* cfs =
-      dynamic_cast<CloudFileSystem*>(options.env->GetFileSystem().get());
-  if (!cfs) {
-    return Status::InvalidArgument(
-        "Expected CloudFileSystem but got a different type");
-  }
+  auto cfs = dynamic_cast<TitanFileSystem*>(options.env->GetFileSystem().get())
+                  ->GetCloudFileSystem();
+  assert(cfs);
   if (!cfs->GetLogger()) {
     cfs->SetLogger(options.info_log);
   }
