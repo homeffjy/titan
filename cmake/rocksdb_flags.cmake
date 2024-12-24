@@ -60,6 +60,8 @@ if(WITH_AWS)
   list(APPEND THIRDPARTY_LIBS ${AWSSDK_LINK_LIBRARIES})
 endif()
 
+add_definitions(-DTITAN_MODS_ENABLED)
+
 option(WITH_ZSTD "build with zstd" OFF)
 if (WITH_ZSTD)
   find_package(zstd REQUIRED)

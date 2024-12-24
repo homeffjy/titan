@@ -27,110 +27,108 @@ class TitanFileSystem : public FileSystem {
                              const FileOptions& options,
                              std::unique_ptr<FSSequentialFile>* result,
                              IODebugContext* dbg) override {
-    return GetAppropriateFS("", fname)->NewSequentialFile(fname, options,
-                                                          result, dbg);
+    return GetAppropriateFS(fname)->NewSequentialFile(fname, options, result,
+                                                      dbg);
   }
 
   IOStatus NewRandomAccessFile(const std::string& fname,
                                const FileOptions& options,
                                std::unique_ptr<FSRandomAccessFile>* result,
                                IODebugContext* dbg) override {
-    return GetAppropriateFS("", fname)->NewRandomAccessFile(fname, options,
-                                                            result, dbg);
+    return GetAppropriateFS(fname)->NewRandomAccessFile(fname, options, result,
+                                                        dbg);
   }
 
   IOStatus NewWritableFile(const std::string& fname, const FileOptions& options,
                            std::unique_ptr<FSWritableFile>* result,
                            IODebugContext* dbg) override {
-    return GetAppropriateFS("", fname)->NewWritableFile(fname, options, result,
-                                                        dbg);
+    return GetAppropriateFS(fname)->NewWritableFile(fname, options, result,
+                                                    dbg);
   }
 
   IOStatus DeleteFile(const std::string& fname, const IOOptions& options,
                       IODebugContext* dbg) override {
-    return GetAppropriateFS("", fname)->DeleteFile(fname, options, dbg);
+    return GetAppropriateFS(fname)->DeleteFile(fname, options, dbg);
   }
 
   IOStatus NewDirectory(const std::string& name, const IOOptions& io_opts,
                         std::unique_ptr<FSDirectory>* result,
                         IODebugContext* dbg) override {
-    return GetAppropriateFS(name, "")->NewDirectory(name, io_opts, result, dbg);
+    return GetAppropriateFS("")->NewDirectory(name, io_opts, result, dbg);
   }
 
   IOStatus FileExists(const std::string& fname, const IOOptions& options,
                       IODebugContext* dbg) override {
-    return GetAppropriateFS("", fname)->FileExists(fname, options, dbg);
+    return GetAppropriateFS(fname)->FileExists(fname, options, dbg);
   }
 
   IOStatus GetChildren(const std::string& dir, const IOOptions& options,
                        std::vector<std::string>* result,
                        IODebugContext* dbg) override {
-    return GetAppropriateFS(dir, "")->GetChildren(dir, options, result, dbg);
+    return GetAppropriateFS("")->GetChildren(dir, options, result, dbg);
   }
 
   IOStatus CreateDir(const std::string& dirname, const IOOptions& options,
                      IODebugContext* dbg) override {
-    return GetAppropriateFS(dirname, "")->CreateDir(dirname, options, dbg);
+    return GetAppropriateFS("")->CreateDir(dirname, options, dbg);
   }
 
   IOStatus CreateDirIfMissing(const std::string& dirname,
                               const IOOptions& options,
                               IODebugContext* dbg) override {
-    return GetAppropriateFS(dirname, "")
-        ->CreateDirIfMissing(dirname, options, dbg);
+    return GetAppropriateFS("")->CreateDirIfMissing(dirname, options, dbg);
   }
 
   IOStatus DeleteDir(const std::string& dirname, const IOOptions& options,
                      IODebugContext* dbg) override {
-    return GetAppropriateFS(dirname, "")->DeleteDir(dirname, options, dbg);
+    return GetAppropriateFS("")->DeleteDir(dirname, options, dbg);
   }
 
   IOStatus GetFileSize(const std::string& fname, const IOOptions& options,
                        uint64_t* file_size, IODebugContext* dbg) override {
-    return GetAppropriateFS("", fname)->GetFileSize(fname, options, file_size,
-                                                    dbg);
+    return GetAppropriateFS(fname)->GetFileSize(fname, options, file_size, dbg);
   }
 
   IOStatus GetFileModificationTime(const std::string& fname,
                                    const IOOptions& options,
                                    uint64_t* file_mtime,
                                    IODebugContext* dbg) override {
-    return GetAppropriateFS("", fname)->GetFileModificationTime(
-        fname, options, file_mtime, dbg);
+    return GetAppropriateFS(fname)->GetFileModificationTime(fname, options,
+                                                            file_mtime, dbg);
   }
 
   IOStatus RenameFile(const std::string& src, const std::string& target,
                       const IOOptions& options, IODebugContext* dbg) override {
-    return GetAppropriateFS("", src)->RenameFile(src, target, options, dbg);
+    return GetAppropriateFS(src)->RenameFile(src, target, options, dbg);
   }
 
   IOStatus LockFile(const std::string& fname, const IOOptions& options,
                     FileLock** lock, IODebugContext* dbg) override {
-    return GetAppropriateFS("", fname)->LockFile(fname, options, lock, dbg);
+    return GetAppropriateFS(fname)->LockFile(fname, options, lock, dbg);
   }
 
   IOStatus UnlockFile(FileLock* lock, const IOOptions& options,
                       IODebugContext* dbg) override {
     // FJY: TODO: Check whether this is ok
-    return GetAppropriateFS("", "")->UnlockFile(lock, options, dbg);
+    return GetAppropriateFS("")->UnlockFile(lock, options, dbg);
   }
 
   IOStatus GetTestDirectory(const IOOptions& options, std::string* path,
                             IODebugContext* dbg) override {
     // FJY: TODO: Check whether this is ok
-    return GetAppropriateFS("", "")->GetTestDirectory(options, path, dbg);
+    return GetAppropriateFS("")->GetTestDirectory(options, path, dbg);
   }
 
   IOStatus GetAbsolutePath(const std::string& db_path, const IOOptions& options,
                            std::string* output_path,
                            IODebugContext* dbg) override {
-    return GetAppropriateFS(db_path, "")
-        ->GetAbsolutePath(db_path, options, output_path, dbg);
+    return GetAppropriateFS("")->GetAbsolutePath(db_path, options, output_path,
+                                                 dbg);
   }
 
   IOStatus IsDirectory(const std::string& path, const IOOptions& options,
                        bool* is_dir, IODebugContext* dbg) override {
-    return GetAppropriateFS(path, "")->IsDirectory(path, options, is_dir, dbg);
+    return GetAppropriateFS("")->IsDirectory(path, options, is_dir, dbg);
   }
 
  private:
@@ -141,14 +139,13 @@ class TitanFileSystem : public FileSystem {
   std::shared_ptr<FileSystem> base_fs_;
   std::shared_ptr<CloudFileSystem> cloud_fs_;
 
-  auto GetAppropriateFS(const std::string& dname, const std::string& fname)
+  auto GetAppropriateFS(const std::string& fname)
       -> std::shared_ptr<FileSystem> {
-    return IsTitanFile(dname, fname) ? cloud_fs_ : base_fs_;
+    return IsTitanFile(fname) ? cloud_fs_ : base_fs_;
   }
 
-  static bool IsTitanFile(const std::string& dname, const std::string& fname) {
-    return Slice(dirname(fname)).ends_with("titandb") or
-           Slice(dname).ends_with("titandb");
+  static bool IsTitanFile(const std::string& fname) {
+    return not Slice(fname).ends_with("sst");
   }
 };
 
