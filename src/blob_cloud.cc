@@ -1,14 +1,17 @@
 #include "blob_cloud.h"
 
 #include <env/composite_env_wrapper.h>
+#include <utilities/persistent_cache/block_cache_tier.h>
+#include <utilities/persistent_cache/persistent_cache_tier.h>
 
 #include "blob_file_system.h"
 
 namespace rocksdb {
 namespace titandb {
-Status TitanCloudHelper::InitializeCloudFS(TitanOptions& options,
-                                           const std::string& dbname,
-                                           bool read_only, bool* new_db) {
+Status TitanCloudHelper::InitializeCloudFS(
+    TitanOptions& options, const std::string& dbname,
+    const std::string& persisten_cache_path,
+    const uint64_t persistent_cache_size_gb, bool read_only, bool* new_db) {
   Status st;
 
   auto cfs = dynamic_cast<TitanFileSystem*>(options.env->GetFileSystem().get())
@@ -35,10 +38,13 @@ Status TitanCloudHelper::InitializeCloudFS(TitanOptions& options,
   std::unique_ptr<Env> local_env(
       new CompositeEnvWrapper(options.env, local_fs));
 
+  // Configure persistent cache if specified
+  if (!persisten_cache_path.empty() && persistent_cache_size_gb) {
+  }
+
   // We do not want a very large MANIFEST file because the MANIFEST file is
   // uploaded to S3 for every update, so always enable rolling of Manifest file
-  options.max_manifest_file_size =
-      4 * 1024L * 1024L;  // FJY: TODO: Move this constant
+  options.max_manifest_file_size = TitanCloudOptions().max_manifest_file_size;
 
   return st;
 }
@@ -111,6 +117,34 @@ Status TitanCloudHelper::FinalizeCloudDB(const TitanOptions& options,
       "Opened cloud db with local dir %s dbid %s. %s", dbname.c_str(),
       dbid.c_str(), st.ToString().c_str());
 
+  return st;
+}
+
+Status TitanCloudHelper::ConfigurePersistentCache(
+    TitanOptions& options, const std::string& persistent_cache_path,
+    uint64_t& persistent_cache_size_gb, std::unique_ptr<Env>& local_env) {
+  Status st;
+  // Get existing options. If the persistent cache is already set, then do
+  // not make any change. Otherwise, configure it.
+  auto* tableopt = options.table_factory->GetOptions<BlockBasedTableOptions>();
+  if (tableopt != nullptr && !tableopt->persistent_cache) {
+    PersistentCacheConfig config(
+        local_env.get(), persistent_cache_path,
+        persistent_cache_size_gb * 1024L * 1024L * 1024L, options.info_log);
+    auto pcache = std::make_shared<BlockCacheTier>(config);
+    st = pcache->Open();
+    if (st.ok()) {
+      tableopt->persistent_cache = pcache;
+      Log(InfoLogLevel::INFO_LEVEL, options.info_log,
+          "Created persistent cache %s with size %" PRIu64 "GB",
+          persistent_cache_path.c_str(), persistent_cache_size_gb);
+    } else {
+      Log(InfoLogLevel::INFO_LEVEL, options.info_log,
+          "Unable to create persistent cache %s. %s",
+          persistent_cache_path.c_str(), st.ToString().c_str());
+      return st;
+    }
+  }
   return st;
 }
 

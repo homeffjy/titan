@@ -1,7 +1,6 @@
 #include "titan/db.h"
 
-#include <blob_cloud.h>
-
+#include "blob_cloud.h"
 #include "blob_file_system.h"
 #include "cloud/db_cloud_impl.h"
 #include "db_impl.h"
@@ -53,14 +52,12 @@ Status TitanDB::Open(const TitanOptions& opt, const std::string& dbname,
   }
 
   bool new_db = false;
-  Status st =
-      TitanCloudHelper::InitializeCloudFS(options, dbname, read_only, &new_db);
+  Status st = TitanCloudHelper::InitializeCloudFS(
+      options, dbname, persistent_cache_path, persistent_cache_size_gb,
+      read_only, &new_db);
   if (!st.ok()) {
     return st;
   }
-
-  // FJY: TODO: Maybe remove persistent Cache
-  assert(persistent_cache_path == "" && persistent_cache_size_gb == 0);
 
   TitanDBOptions db_options(options);
   TitanCFOptions cf_options(options);

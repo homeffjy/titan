@@ -9,6 +9,22 @@
 namespace rocksdb {
 namespace titandb {
 
+struct TitanCloudOptions {
+  bool enabled{false};
+
+  bool validate_filesize{true};
+  bool roll_cloud_manifest_on_open{true};
+  bool new_cookie_on_open{true};
+
+  uint64_t max_manifest_file_size{4 * 1024 * 1024}; // 4MB
+
+  std::string persistent_cache_path;
+  uint64_t persistent_cache_size_gb{0};
+
+  void Dump(Logger* logger) const;
+};
+
+
 struct TitanDBOptions : public DBOptions {
   // The directory to store data specific to TitanDB alongside with
   // the base DB.
@@ -37,6 +53,9 @@ struct TitanDBOptions : public DBOptions {
   //
   // Default: 600 (10 min)
   uint32_t titan_stats_dump_period_sec{600};
+
+  // Blob cloud storage options
+  TitanCloudOptions cloud_options;
 
   TitanDBOptions() = default;
   explicit TitanDBOptions(const DBOptions& options) : DBOptions(options) {}

@@ -4,6 +4,8 @@
 #define __STDC_FORMAT_MACROS
 #endif
 
+#include <rocksdb/c.h>
+
 #include <cinttypes>
 
 #include "options/options_helper.h"
@@ -12,6 +14,12 @@
 
 namespace rocksdb {
 namespace titandb {
+
+void TitanCloudOptions::Dump(Logger* logger) const {
+  TITAN_LOG_HEADER(logger, "TitanCloudOptions.enabled                 : %d",
+                   static_cast<int>(enabled));
+  // TODO
+}
 
 void TitanDBOptions::Dump(Logger* logger) const {
   TITAN_LOG_HEADER(logger, "TitanDBOptions.dirname                    : %s",
@@ -27,6 +35,8 @@ void TitanDBOptions::Dump(Logger* logger) const {
   TITAN_LOG_HEADER(logger,
                    "TitanDBOptions.titan_stats_dump_period_sec: %" PRIu32,
                    titan_stats_dump_period_sec);
+
+  cloud_options.Dump(logger);
 }
 
 TitanCFOptions::TitanCFOptions(const ColumnFamilyOptions& cf_opts,
