@@ -16,9 +16,11 @@ namespace rocksdb {
 namespace titandb {
 
 void TitanCloudOptions::Dump(Logger* logger) const {
-  TITAN_LOG_HEADER(logger, "TitanCloudOptions.enabled                 : %d",
-                   static_cast<int>(enabled));
-  // TODO(fjy)
+  TITAN_LOG_HEADER(logger, "TitanCloudOptions.persistent_cache_path   : %s",
+                   persistent_cache_path.c_str());
+  TITAN_LOG_HEADER(logger,
+                   "TitanCloudOptions.persistent_cache_size_gb: %" PRIu64,
+                   persistent_cache_size_gb);
 }
 
 void TitanDBOptions::Dump(Logger* logger) const {

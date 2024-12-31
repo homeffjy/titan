@@ -67,8 +67,8 @@ class CloudTest : public testing::Test {
     options_.create_if_missing = true;
     options_.stats_dump_period_sec = 0;
     options_.stats_persist_period_sec = 0;
-    persistent_cache_path_ = "";
-    persistent_cache_size_gb_ = 0;
+    options_.cloud_options.persistent_cache_path = "";
+    options_.cloud_options.persistent_cache_size_gb = 0;
     db_ = nullptr;
 
     DestroyDir(dbname_);
@@ -201,14 +201,13 @@ class CloudTest : public testing::Test {
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
     ASSERT_TRUE(db_ == nullptr);
-    std::vector<ColumnFamilyDescriptor> column_families;
+    std::vector<TitanCFDescriptor> descs;
     for (size_t i = 0; i < cfs.size(); ++i) {
-      column_families.emplace_back(cfs[i], options_);
+      descs.emplace_back(cfs[i], options_);
     }
-    // For now, we don't use cf
-    ASSERT_OK(titandb::TitanDB::OpenWithCloud(options_, dbname_, &db_,
-                                     persistent_cache_path_,
-                                     persistent_cache_size_gb_));
+
+    ASSERT_OK(titandb::TitanDB::OpenWithCloud(options_, dbname_, descs, handles,
+                                              &db_));
     ASSERT_OK(db_->GetDbIdentity(dbid_));
   }
 
@@ -220,8 +219,7 @@ class CloudTest : public testing::Test {
     // Sleep for a second because S3 is eventual consistency.
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    return TitanDB::OpenWithCloud(options_, dbname_, &db_, persistent_cache_path_,
-                         persistent_cache_size_gb_);
+    return TitanDB::OpenWithCloud(options_, dbname_, &db_);
   }
 
   void CreateColumnFamilies(const std::vector<std::string>& cfs,
@@ -245,6 +243,7 @@ class CloudTest : public testing::Test {
 
     CloudFileSystem* cfs;
     TitanDB* clone_db;
+    TitanFileSystem* clone_tfs;
 
     // If there is no destination bucket, then the clone needs to copy
     // all sst fies from source bucket to local dir
@@ -266,6 +265,10 @@ class CloudTest : public testing::Test {
       return st;
     }
 
+    std::shared_ptr<CloudFileSystem> blob_cfs(cfs);
+    st = TitanFileSystem::NewTitanFileSystem(base_env_->GetFileSystem(),
+                                             blob_cfs, &clone_tfs);
+
     // sets the env to be used by the env wrapper, and returns that env
     env->reset(
         new CompositeEnvWrapper(base_env_, std::shared_ptr<FileSystem>(cfs)));
@@ -279,12 +282,7 @@ class CloudTest : public testing::Test {
         ColumnFamilyDescriptor(kDefaultColumnFamilyName, cfopt));
     std::vector<ColumnFamilyHandle*> handles;
 
-    // st = TitanDB::Open(options_, cname, column_families,
-    // persistent_cache_path_,
-    //                    persistent_cache_size_gb_, &handles, &clone_db);
-
-    st = TitanDB::OpenWithCloud(options_, cname, &clone_db, persistent_cache_path_,
-                       persistent_cache_size_gb_);
+    st = TitanDB::OpenWithCloud(options_, cname, &clone_db);
 
     if (!st.ok()) {
       return st;
@@ -317,8 +315,8 @@ class CloudTest : public testing::Test {
   }
 
   void SetPersistentCache(const std::string& path, uint64_t size_gb) {
-    persistent_cache_path_ = path;
-    persistent_cache_size_gb_ = size_gb;
+    options_.cloud_options.persistent_cache_path = path;
+    options_.cloud_options.persistent_cache_size_gb = size_gb;
   }
 
   Status GetCloudLiveFilesSrc(std::set<uint64_t>* list) {
@@ -364,11 +362,16 @@ class CloudTest : public testing::Test {
 
   CloudFileSystem* GetCloudFileSystem() const {
     EXPECT_TRUE(aenv_);
-    return static_cast<CloudFileSystem*>(aenv_->GetFileSystem().get());
+    return dynamic_cast<TitanFileSystem*>(aenv_->GetFileSystem().get())
+        ->GetCloudFileSystem()
+        .get();
   }
   CloudFileSystemImpl* GetCloudFileSystemImpl() const {
     EXPECT_TRUE(aenv_);
-    return static_cast<CloudFileSystemImpl*>(aenv_->GetFileSystem().get());
+    return static_cast<CloudFileSystemImpl*>(
+        dynamic_cast<TitanFileSystem*>(aenv_->GetFileSystem().get())
+            ->GetCloudFileSystem()
+            .get());
   }
 
   DBImpl* GetDBImpl() const { return static_cast<DBImpl*>(db_->GetBaseDB()); }
@@ -449,8 +452,6 @@ class CloudTest : public testing::Test {
   std::string clone_dir_;
   CloudFileSystemOptions cloud_fs_options_;
   std::string dbid_;
-  std::string persistent_cache_path_;
-  uint64_t persistent_cache_size_gb_;
   TitanDB* db_;
   std::unique_ptr<Env> aenv_;
 };

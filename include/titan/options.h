@@ -10,17 +10,8 @@ namespace rocksdb {
 namespace titandb {
 
 struct TitanCloudOptions {
-  bool enabled{false};
-
-  bool validate_filesize{true};
-  bool roll_cloud_manifest_on_open{true};
-  bool new_cookie_on_open{true};
-
-  uint64_t max_manifest_file_size{4 * 1024 * 1024}; // 4MB
-
   std::string persistent_cache_path;
   uint64_t persistent_cache_size_gb{0};
-
   void Dump(Logger* logger) const;
 };
 
