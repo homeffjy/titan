@@ -28,15 +28,15 @@ int main() {
   // associated with every new cloud-db.
   std::shared_ptr<rocksdb::FileSystem> fs;
 
-  cloud_fs_options.credentials.InitializeSimple(
-      getenv("AWS_ACCESS_KEY_ID"), getenv("AWS_SECRET_ACCESS_KEY"));
-  if (!cloud_fs_options.credentials.HasValid().ok()) {
-    fprintf(
-        stderr,
-        "Please set env variables "
-        "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY with cloud credentials");
-    return -1;
-  }
+  // cloud_fs_options.credentials.InitializeSimple(
+  //     getenv("AWS_ACCESS_KEY_ID"), getenv("AWS_SECRET_ACCESS_KEY"));
+  // if (!cloud_fs_options.credentials.HasValid().ok()) {
+  //   fprintf(
+  //       stderr,
+  //       "Please set env variables "
+  //       "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY with cloud credentials");
+  //   return -1;
+  // }
 
   // Append the user name to the bucket name in an attempt to make it
   // globally unique. S3 bucket-names need to be globally unique.

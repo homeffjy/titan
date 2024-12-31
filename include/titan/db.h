@@ -25,7 +25,7 @@ class TitanDB : public StackableDB {
 
   static Status Open(const TitanOptions& db_options, const std::string& dbname,
                      TitanDB** db, const std::string& persistent_cache_path,
-                     const uint64_t persistent_cache_size_gb,
+                     uint64_t persistent_cache_size_gb,
                      bool read_only = false);
 
   static Status Open(const TitanDBOptions& db_options,

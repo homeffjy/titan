@@ -1,6 +1,5 @@
 // Copyright (c) 2017 Rockset
 
-#include <blob_file_system.h>
 #ifndef ROCKSDB_LITE
 
 #ifdef USE_AWS
@@ -13,6 +12,7 @@
 #include <cinttypes>
 #include <filesystem>
 
+#include "blob_file_system.h"
 #include "cloud/cloud_manifest.h"
 #include "cloud/cloud_scheduler.h"
 #include "cloud/db_cloud_impl.h"
@@ -33,6 +33,7 @@
 #include "test_util/sync_point.h"
 #include "test_util/testharness.h"
 #include "test_util/testutil.h"
+#include "titan/db.h"
 #include "util/random.h"
 #include "util/string_util.h"
 #ifndef OS_WIN
@@ -40,7 +41,7 @@
 #endif
 
 namespace ROCKSDB_NAMESPACE {
-
+namespace titandb {
 namespace {
 const FileOptions kFileOptions;
 const IOOptions kIOOptions;
@@ -57,7 +58,7 @@ class CloudTest : public testing::Test {
     base_env_ = Env::Default();
     dbname_ = test::TmpDir() + "/blob_cloud-" + test_id_;
     clone_dir_ = test::TmpDir() + "/ctest-" + test_id_;
-    cloud_fs_options_.TEST_Initialize("dbcloudtest.", dbname_);
+    cloud_fs_options_.TEST_Initialize("titan-test.", dbname_);
     cloud_fs_options_.use_aws_transfer_manager = true;
     // To catch any possible file deletion bugs, cloud files are deleted
     // right away
@@ -169,7 +170,7 @@ class CloudTest : public testing::Test {
     auto t = std::shared_ptr<CloudFileSystem>(cfs);
     ASSERT_OK(titandb::TitanFileSystem::NewTitanFileSystem(
         base_env_->GetFileSystem(), t, &tfs));
-    const std::shared_ptr<FileSystem> fs(cfs);
+    const std::shared_ptr<FileSystem> fs(tfs);
     aenv_ = CloudFileSystemEnv::NewCompositeEnv(base_env_, fs);
   }
 
@@ -204,9 +205,10 @@ class CloudTest : public testing::Test {
     for (size_t i = 0; i < cfs.size(); ++i) {
       column_families.emplace_back(cfs[i], options_);
     }
-    ASSERT_OK(DBCloud::Open(options_, dbname_, column_families,
-                            persistent_cache_path_, persistent_cache_size_gb_,
-                            handles, &db_));
+    // For now, we don't use cf
+    ASSERT_OK(titandb::TitanDB::Open(options_, dbname_, &db_,
+                                     persistent_cache_path_,
+                                     persistent_cache_size_gb_));
     ASSERT_OK(db_->GetDbIdentity(dbid_));
   }
 
@@ -218,8 +220,8 @@ class CloudTest : public testing::Test {
     // Sleep for a second because S3 is eventual consistency.
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    return DBCloud::Open(options_, dbname_, persistent_cache_path_,
-                         persistent_cache_size_gb_, &db_);
+    return TitanDB::Open(options_, dbname_, &db_, persistent_cache_path_,
+                         persistent_cache_size_gb_);
   }
 
   void CreateColumnFamilies(const std::vector<std::string>& cfs,
@@ -236,13 +238,13 @@ class CloudTest : public testing::Test {
   Status CloneDB(const std::string& clone_name,
                  const std::string& dest_bucket_name,
                  const std::string& dest_object_path,
-                 std::unique_ptr<DBCloud>* cloud_db, std::unique_ptr<Env>* env,
+                 std::unique_ptr<TitanDB>* cloud_db, std::unique_ptr<Env>* env,
                  bool force_keep_local_on_invalid_dest_bucket = true) {
     // The local directory where the clone resides
     std::string cname = clone_dir_ + "/" + clone_name;
 
     CloudFileSystem* cfs;
-    DBCloud* clone_db;
+    TitanDB* clone_db;
 
     // If there is no destination bucket, then the clone needs to copy
     // all sst fies from source bucket to local dir
@@ -277,8 +279,13 @@ class CloudTest : public testing::Test {
         ColumnFamilyDescriptor(kDefaultColumnFamilyName, cfopt));
     std::vector<ColumnFamilyHandle*> handles;
 
-    st = DBCloud::Open(options_, cname, column_families, persistent_cache_path_,
-                       persistent_cache_size_gb_, &handles, &clone_db);
+    // st = TitanDB::Open(options_, cname, column_families,
+    // persistent_cache_path_,
+    //                    persistent_cache_size_gb_, &handles, &clone_db);
+
+    st = TitanDB::Open(options_, cname, &clone_db, persistent_cache_path_,
+                       persistent_cache_size_gb_);
+
     if (!st.ok()) {
       return st;
     }
@@ -437,14 +444,14 @@ class CloudTest : public testing::Test {
 
   std::string test_id_;
   Env* base_env_;
-  Options options_;
+  TitanOptions options_;
   std::string dbname_;
   std::string clone_dir_;
   CloudFileSystemOptions cloud_fs_options_;
   std::string dbid_;
   std::string persistent_cache_path_;
   uint64_t persistent_cache_size_gb_;
-  DBCloud* db_;
+  TitanDB* db_;
   std::unique_ptr<Env> aenv_;
 };
 
@@ -658,7 +665,7 @@ TEST_F(CloudTest, Newdb) {
   {
     // Create and Open a new ephemeral instance
     std::unique_ptr<Env> env;
-    std::unique_ptr<DBCloud> cloud_db;
+    std::unique_ptr<TitanDB> cloud_db;
     CloneDB("newdb1", "", "", &cloud_db, &env);
 
     // Retrieve the id of the first reopen
@@ -698,7 +705,7 @@ TEST_F(CloudTest, Newdb) {
     // same two buckets as newdb1. This should be identical in contents with
     // newdb1.
     std::unique_ptr<Env> env;
-    std::unique_ptr<DBCloud> cloud_db;
+    std::unique_ptr<TitanDB> cloud_db;
     CloneDB("newdb2", "", "", &cloud_db, &env);
 
     // Retrieve the id of the second clone db
@@ -757,7 +764,7 @@ TEST_F(CloudTest, ColumnFamilies) {
   options_.env = aenv_.get();
 
   std::vector<std::string> families;
-  ASSERT_OK(DBCloud::ListColumnFamilies(options_, dbname_, &families));
+  ASSERT_OK(TitanDB::ListColumnFamilies(options_, dbname_, &families));
   std::sort(families.begin(), families.end());
   ASSERT_TRUE(families == std::vector<std::string>(
                               {"cf1", "cf2", kDefaultColumnFamilyName}));
@@ -791,7 +798,7 @@ TEST_F(CloudTest, DISABLED_TrueClone) {
     // Create a new instance with different src and destination paths.
     // This is true clone and should have all the contents of the masterdb
     std::unique_ptr<Env> env;
-    std::unique_ptr<DBCloud> cloud_db;
+    std::unique_ptr<TitanDB> cloud_db;
     CloneDB("localpath1", cloud_fs_options_.src_bucket.GetBucketName(),
             clone_path1, &cloud_db, &env);
 
@@ -817,7 +824,7 @@ TEST_F(CloudTest, DISABLED_TrueClone) {
   {
     // Reopen clone1 with a different local path
     std::unique_ptr<Env> env;
-    std::unique_ptr<DBCloud> cloud_db;
+    std::unique_ptr<TitanDB> cloud_db;
     CloneDB("localpath2", cloud_fs_options_.src_bucket.GetBucketName(),
             clone_path1, &cloud_db, &env);
 
@@ -832,7 +839,7 @@ TEST_F(CloudTest, DISABLED_TrueClone) {
   {
     // Reopen clone1 with the same local path as above.
     std::unique_ptr<Env> env;
-    std::unique_ptr<DBCloud> cloud_db;
+    std::unique_ptr<TitanDB> cloud_db;
     CloneDB("localpath2", cloud_fs_options_.src_bucket.GetBucketName(),
             clone_path1, &cloud_db, &env);
 
@@ -848,7 +855,7 @@ TEST_F(CloudTest, DISABLED_TrueClone) {
   {
     // Create clone2
     std::unique_ptr<Env> env;
-    std::unique_ptr<DBCloud> cloud_db;
+    std::unique_ptr<TitanDB> cloud_db;
     CloneDB("localpath3",  // xxx try with localpath2
             cloud_fs_options_.src_bucket.GetBucketName(), clone_path2,
             &cloud_db, &env);
@@ -1035,80 +1042,8 @@ TEST_F(CloudTest, DelayFileDeletion) {
   }
 }
 
+// TODO: cloud savepoint
 // Verify that a savepoint copies all src files to destination
-TEST_F(CloudTest, Savepoint) {
-  // Put one key-value
-  OpenDB();
-  std::string value;
-  ASSERT_OK(db_->Put(WriteOptions(), "Hello", "World"));
-  ASSERT_OK(db_->Get(ReadOptions(), "Hello", &value));
-  ASSERT_TRUE(value.compare("World") == 0);
-  CloseDB();
-  value.clear();
-  std::string dest_path = "/clone2_path-" + test_id_;
-  {
-    // Create a new instance with different src and destination paths.
-    // This is true clone and should have all the contents of the masterdb
-    std::unique_ptr<Env> env;
-    std::unique_ptr<DBCloud> cloud_db;
-    CloneDB("localpath1", cloud_fs_options_.src_bucket.GetBucketName(),
-            dest_path, &cloud_db, &env);
-
-    // check that the original kv appears in the clone
-    value.clear();
-    ASSERT_OK(cloud_db->Get(ReadOptions(), "Hello", &value));
-    ASSERT_TRUE(value.compare("World") == 0);
-
-    // there should be only one sst file
-    std::vector<LiveFileMetaData> flist;
-    cloud_db->GetLiveFilesMetaData(&flist);
-    ASSERT_TRUE(flist.size() == 1);
-
-    auto* cimpl = static_cast<CloudFileSystemImpl*>(env->GetFileSystem().get());
-    auto remapped_fname = cimpl->RemapFilename(flist[0].name);
-    // source path
-    std::string spath = cimpl->GetSrcObjectPath() + "/" + remapped_fname;
-    ASSERT_OK(cimpl->GetStorageProvider()->ExistsCloudObject(
-        cimpl->GetSrcBucketName(), spath));
-
-    // Verify that the destination path does not have any sst files
-    std::string dpath = dest_path + "/" + remapped_fname;
-    ASSERT_TRUE(cimpl->GetStorageProvider()
-                    ->ExistsCloudObject(cimpl->GetSrcBucketName(), dpath)
-                    .IsNotFound());
-
-    // write a new value to the clone
-    ASSERT_OK(cloud_db->Put(WriteOptions(), "Hell", "Done"));
-    value.clear();
-    ASSERT_OK(cloud_db->Get(ReadOptions(), "Hell", &value));
-    ASSERT_TRUE(value.compare("Done") == 0);
-
-    // Invoke savepoint to populate destination path from source path
-    ASSERT_OK(cloud_db->Savepoint());
-
-    // check that the sst file is copied to dest path
-    ASSERT_OK(cimpl->GetStorageProvider()->ExistsCloudObject(
-        cimpl->GetSrcBucketName(), dpath));
-    ASSERT_OK(cloud_db->Flush(FlushOptions()));
-  }
-  {
-    // Reopen the clone
-    std::unique_ptr<Env> env;
-    std::unique_ptr<DBCloud> cloud_db;
-    CloneDB("localpath2", cloud_fs_options_.src_bucket.GetBucketName(),
-            dest_path, &cloud_db, &env);
-
-    // check that the both kvs appears in the clone
-    value.clear();
-    ASSERT_OK(cloud_db->Get(ReadOptions(), "Hello", &value));
-    ASSERT_TRUE(value.compare("World") == 0);
-    value.clear();
-    ASSERT_OK(cloud_db->Get(ReadOptions(), "Hell", &value));
-    ASSERT_TRUE(value.compare("Done") == 0);
-  }
-  GetCloudFileSystem()->GetStorageProvider()->EmptyBucket(
-      GetCloudFileSystem()->GetSrcBucketName(), dest_path);
-}
 
 TEST_F(CloudTest, Encryption) {
   // Create aws env
@@ -1333,7 +1268,7 @@ TEST_F(CloudTest, TwoConcurrentWritersCookieEmpty) {
   auto firstDB = dbname_;
   auto secondDB = dbname_ + "-1";
 
-  DBCloud *db1, *db2;
+  TitanDB *db1, *db2;
   Env *aenv1, *aenv2;
 
   auto openDB1 = [&] {
@@ -1527,7 +1462,7 @@ TEST_F(CloudTest, Ephemeral) {
   // to any cloud storage.
   {
     std::unique_ptr<Env> env;
-    std::unique_ptr<DBCloud> cloud_db;
+    std::unique_ptr<TitanDB> cloud_db;
     CloneDB("db_ephemeral", "", "", &cloud_db, &env);
 
     // Retrieve the id of the first reopen
@@ -1574,7 +1509,7 @@ TEST_F(CloudTest, Ephemeral) {
   // files from the cloud
   {
     std::unique_ptr<Env> env;
-    std::unique_ptr<DBCloud> cloud_db;
+    std::unique_ptr<TitanDB> cloud_db;
     std::string dbid;
     options_.info_log = nullptr;
     CreateLoggerFromOptions(clone_dir_ + "/db_ephemeral", options_,
@@ -1633,7 +1568,7 @@ TEST_F(CloudTest, EphemeralOnCorruptedDB) {
       GetCloudFileSystem()->GetSrcObjectPath() + "/" + manifest_file_name);
 
   // Ephemeral clone should fail.
-  std::unique_ptr<DBCloud> clone_db;
+  std::unique_ptr<TitanDB> clone_db;
   std::unique_ptr<Env> env;
   Status st = CloneDB("clone1", "", "", &clone_db, &env);
   ASSERT_TRUE(st.IsCorruption());
@@ -1681,7 +1616,7 @@ TEST_F(CloudTest, EphemeralResync) {
   // to any cloud storage.
   {
     std::unique_ptr<Env> env;
-    std::unique_ptr<DBCloud> cloud_db;
+    std::unique_ptr<TitanDB> cloud_db;
     CloneDB("db_ephemeral", "", "", &cloud_db, &env);
 
     // Retrieve the id of the first reopen
@@ -1730,7 +1665,7 @@ TEST_F(CloudTest, EphemeralResync) {
   // are reflected in the newly opened ephemeral database.
   {
     std::unique_ptr<Env> env;
-    std::unique_ptr<DBCloud> cloud_db;
+    std::unique_ptr<TitanDB> cloud_db;
     std::string dbid;
     options_.info_log = nullptr;
     CreateLoggerFromOptions(clone_dir_ + "/db_ephemeral", options_,
@@ -1754,50 +1689,7 @@ TEST_F(CloudTest, EphemeralResync) {
   }
 }
 
-TEST_F(CloudTest, CheckpointToCloud) {
-  cloud_fs_options_.keep_local_sst_files = true;
-  options_.level0_file_num_compaction_trigger = 100;  // never compact
-
-  // Pre-create the bucket.
-  CreateCloudEnv();
-  aenv_.reset();
-
-  // S3 is eventual consistency.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
-  auto checkpoint_bucket = cloud_fs_options_.dest_bucket;
-
-  // cloud_fs_options_.src_bucket = BucketOptions();
-  // cloud_fs_options_.dest_bucket = BucketOptions();
-
-  // Create a DB with two files
-  OpenDB();
-  ASSERT_OK(db_->Put(WriteOptions(), "a", "b"));
-  ASSERT_OK(db_->Flush(FlushOptions()));
-  ASSERT_OK(db_->Put(WriteOptions(), "c", "d"));
-  ASSERT_OK(db_->Flush(FlushOptions()));
-
-  ASSERT_OK(
-      db_->CheckpointToCloud(checkpoint_bucket, CheckpointToCloudOptions()));
-
-  ASSERT_EQ(2, GetSSTFiles(dbname_).size());
-  CloseDB();
-
-  DestroyDir(dbname_);
-
-  cloud_fs_options_.src_bucket = checkpoint_bucket;
-
-  OpenDB();
-  std::string value;
-  ASSERT_OK(db_->Get(ReadOptions(), "a", &value));
-  ASSERT_EQ(value, "b");
-  ASSERT_OK(db_->Get(ReadOptions(), "c", &value));
-  ASSERT_EQ(value, "d");
-  CloseDB();
-
-  GetCloudFileSystem()->GetStorageProvider()->EmptyBucket(
-      checkpoint_bucket.GetBucketName(), checkpoint_bucket.GetObjectPath());
-}
+// TODO: checkpoint to cloud test
 
 // Basic test to copy object within S3.
 TEST_F(CloudTest, CopyObjectTest) {
@@ -1880,7 +1772,7 @@ TEST_F(CloudTest, SharedBlockCache) {
   OpenDB();
 
   std::unique_ptr<Env> clone_env;
-  std::unique_ptr<DBCloud> clone_db;
+  std::unique_ptr<TitanDB> clone_db;
   CloneDB("newdb1", cloud_fs_options_.src_bucket.GetBucketName(),
           cloud_fs_options_.src_bucket.GetObjectPath() + "-clone", &clone_db,
           &clone_env, false /* force_keep_local_on_invalid_dest_bucket */);
@@ -2609,7 +2501,7 @@ TEST_F(CloudTest, TwoConcurrentWritersCookieNotEmpty) {
   auto firstDB = dbname_;
   auto secondDB = dbname_ + "-1";
 
-  DBCloud *db1, *db2;
+  TitanDB *db1, *db2;
   Env *aenv1, *aenv2;
 
   auto openDB1 = [&] {
@@ -2843,7 +2735,7 @@ TEST_F(CloudTest, ReopenEphemeralAfterFileDeletion) {
 
   auto durableDBName = dbname_;
 
-  DBCloud *durable, *ephemeral;
+  TitanDB *durable, *ephemeral;
   Env *durableEnv, *ephemeralEnv;
   std::vector<ColumnFamilyHandle*> durableHandles;
 
@@ -2858,7 +2750,7 @@ TEST_F(CloudTest, ReopenEphemeralAfterFileDeletion) {
 
   auto openEphemeral = [&] {
     std::unique_ptr<Env> env;
-    std::unique_ptr<DBCloud> cloud_db;
+    std::unique_ptr<TitanDB> cloud_db;
     // open ephemeral clone with force_keep_local_on_invalid_dest_bucket=false
     // so that sst files are not kept locally
     ASSERT_OK(CloneDB("ephemeral" /* clone_name */, "" /* dest_bucket_name */,
@@ -3225,7 +3117,7 @@ TEST_F(CloudTest, CreateIfMissing) {
   options_.create_if_missing = false;
   ASSERT_TRUE(checkOpen().IsNotFound());
 }
-
+}  //  namespace titandb
 }  //  namespace ROCKSDB_NAMESPACE
 
 // A black-box test for the cloud wrapper around rocksdb
@@ -3243,7 +3135,7 @@ int main(int argc, char** argv) {
 
 int main(int, char**) {
   fprintf(stderr,
-          "SKIPPED as DBCloud is supported only when USE_AWS is defined.\n");
+          "SKIPPED as TitanDB is supported only when USE_AWS is defined.\n");
   return 0;
 }
 #endif
@@ -3253,7 +3145,7 @@ int main(int, char**) {
 #include <stdio.h>
 
 int main(int, char**) {
-  fprintf(stderr, "SKIPPED as DBCloud is not supported in ROCKSDB_LITE\n");
+  fprintf(stderr, "SKIPPED as TitanDB is not supported in ROCKSDB_LITE\n");
   return 0;
 }
 
