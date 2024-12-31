@@ -7,13 +7,11 @@ namespace rocksdb {
 namespace titandb {
 class TitanCloudHelper {
  public:
-  static Status InitializeCloudFS(TitanOptions& options,
-                                  const std::string& dbname,
-                                  const std::string& persisten_cache_path,
-                                  uint64_t persistent_cache_size_gb,
-                                  bool read_only, bool* new_db);
+  static Status InitializeCloudResources(const TitanOptions& options,
+                                         const std::string& dbname,
+                                         bool read_only, bool* new_db);
 
-  static Status FinalizeCloudDB(const TitanOptions& options,
+  static Status FinalizeCloudSetup(const TitanOptions& options,
                                 const std::string& dbname, bool new_db,
                                 const TitanDB* db);
 
@@ -24,8 +22,9 @@ class TitanCloudHelper {
                                    bool* new_db);
 
   static Status ConfigurePersistentCache(
-      TitanOptions& options, const std::string& persistent_cache_path,
-      uint64_t& persistent_cache_size_gb, std::unique_ptr<Env>& local_env);
+      const TitanOptions& options, const std::string& persistent_cache_path,
+      const uint64_t& persistent_cache_size_gb,
+      const std::unique_ptr<Env>& local_env);
 };
 }  // namespace titandb
 }  // namespace rocksdb

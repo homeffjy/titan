@@ -18,7 +18,7 @@ namespace titandb {
 void TitanCloudOptions::Dump(Logger* logger) const {
   TITAN_LOG_HEADER(logger, "TitanCloudOptions.enabled                 : %d",
                    static_cast<int>(enabled));
-  // TODO
+  // TODO(fjy)
 }
 
 void TitanDBOptions::Dump(Logger* logger) const {

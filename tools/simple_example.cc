@@ -34,7 +34,8 @@ int main() {
   //   fprintf(
   //       stderr,
   //       "Please set env variables "
-  //       "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY with cloud credentials");
+  //       "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY with cloud
+  //       credentials");
   //   return -1;
   // }
 
@@ -78,9 +79,6 @@ int main() {
   rocksdb::titandb::TitanOptions options;
   options.env = cloud_env.get();
 
-  // No persistent read-cache
-  std::string persistent_cache;
-
   // options for each write
   rocksdb::WriteOptions wopt;
   wopt.disableWAL = disableWAL;  // TODO: figure out why set disable WAL
@@ -89,8 +87,7 @@ int main() {
   rocksdb::titandb::TitanDB *db;
   options.min_blob_size = 10;
   options.create_if_missing = true;
-  s = rocksdb::titandb::TitanDB::Open(options, kDBPath, &db, persistent_cache,
-                                      0);
+  s = rocksdb::titandb::TitanDB::OpenWithCloud(options, kDBPath, &db);
   assert(s.ok());
 
   // Put key-value

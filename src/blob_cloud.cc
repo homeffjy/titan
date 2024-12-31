@@ -1,17 +1,16 @@
 #include "blob_cloud.h"
 
-#include <env/composite_env_wrapper.h>
-#include <utilities/persistent_cache/block_cache_tier.h>
-#include <utilities/persistent_cache/persistent_cache_tier.h>
-
 #include "blob_file_system.h"
+#include "env/composite_env_wrapper.h"
+#include "utilities/persistent_cache/block_cache_tier.h"
+#include "utilities/persistent_cache/persistent_cache_tier.h"
 
 namespace rocksdb {
 namespace titandb {
-Status TitanCloudHelper::InitializeCloudFS(
-    TitanOptions& options, const std::string& dbname,
-    const std::string& persisten_cache_path,
-    const uint64_t persistent_cache_size_gb, bool read_only, bool* new_db) {
+Status TitanCloudHelper::InitializeCloudResources(const TitanOptions& options,
+                                                  const std::string& dbname,
+                                                  bool read_only,
+                                                  bool* new_db) {
   Status st;
 
   auto cfs = dynamic_cast<TitanFileSystem*>(options.env->GetFileSystem().get())
@@ -38,14 +37,15 @@ Status TitanCloudHelper::InitializeCloudFS(
   std::unique_ptr<Env> local_env(
       new CompositeEnvWrapper(options.env, local_fs));
 
+  auto persistent_cache_path = options.cloud_options.persistent_cache_path;
+  auto persistent_cache_size_gb =
+      options.cloud_options.persistent_cache_size_gb;
   // Configure persistent cache if specified
-  if (!persisten_cache_path.empty() && persistent_cache_size_gb) {
+  if (!persistent_cache_path.empty() && persistent_cache_size_gb) {
+    st = ConfigurePersistentCache(options, persistent_cache_path,
+                                  persistent_cache_size_gb, local_env);
+    if (!st.ok()) return st;
   }
-
-  // We do not want a very large MANIFEST file because the MANIFEST file is
-  // uploaded to S3 for every update, so always enable rolling of Manifest file
-  options.max_manifest_file_size = TitanCloudOptions().max_manifest_file_size;
-
   return st;
 }
 
@@ -86,9 +86,10 @@ Status TitanCloudHelper::SetupCloudManifest(
   return st;
 }
 
-Status TitanCloudHelper::FinalizeCloudDB(const TitanOptions& options,
-                                         const std::string& dbname, bool new_db,
-                                         const TitanDB* db) {
+Status TitanCloudHelper::FinalizeCloudSetup(const TitanOptions& options,
+                                            const std::string& dbname,
+                                            const bool new_db,
+                                            const TitanDB* db) {
   Status st;
   auto cfs = dynamic_cast<TitanFileSystem*>(options.env->GetFileSystem().get())
                  ->GetCloudFileSystem();
@@ -121,8 +122,9 @@ Status TitanCloudHelper::FinalizeCloudDB(const TitanOptions& options,
 }
 
 Status TitanCloudHelper::ConfigurePersistentCache(
-    TitanOptions& options, const std::string& persistent_cache_path,
-    uint64_t& persistent_cache_size_gb, std::unique_ptr<Env>& local_env) {
+    const TitanOptions& options, const std::string& persistent_cache_path,
+    const uint64_t& persistent_cache_size_gb,
+    const std::unique_ptr<Env>& local_env) {
   Status st;
   // Get existing options. If the persistent cache is already set, then do
   // not make any change. Otherwise, configure it.

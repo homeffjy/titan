@@ -206,7 +206,7 @@ class CloudTest : public testing::Test {
       column_families.emplace_back(cfs[i], options_);
     }
     // For now, we don't use cf
-    ASSERT_OK(titandb::TitanDB::Open(options_, dbname_, &db_,
+    ASSERT_OK(titandb::TitanDB::OpenWithCloud(options_, dbname_, &db_,
                                      persistent_cache_path_,
                                      persistent_cache_size_gb_));
     ASSERT_OK(db_->GetDbIdentity(dbid_));
@@ -220,7 +220,7 @@ class CloudTest : public testing::Test {
     // Sleep for a second because S3 is eventual consistency.
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    return TitanDB::Open(options_, dbname_, &db_, persistent_cache_path_,
+    return TitanDB::OpenWithCloud(options_, dbname_, &db_, persistent_cache_path_,
                          persistent_cache_size_gb_);
   }
 
@@ -283,7 +283,7 @@ class CloudTest : public testing::Test {
     // persistent_cache_path_,
     //                    persistent_cache_size_gb_, &handles, &clone_db);
 
-    st = TitanDB::Open(options_, cname, &clone_db, persistent_cache_path_,
+    st = TitanDB::OpenWithCloud(options_, cname, &clone_db, persistent_cache_path_,
                        persistent_cache_size_gb_);
 
     if (!st.ok()) {

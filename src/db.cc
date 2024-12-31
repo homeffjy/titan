@@ -41,45 +41,52 @@ Status TitanDB::Open(const TitanDBOptions& db_options,
   return s;
 }
 
-Status TitanDB::Open(const TitanOptions& opt, const std::string& dbname,
-                     TitanDB** db, const std::string& persistent_cache_path,
-                     const uint64_t persistent_cache_size_gb, bool read_only) {
-  TitanOptions options = opt;
-
-  // Created logger if it is not already pre-created by user.
-  if (!options.info_log) {
-    CreateLoggerFromOptions(dbname, options, &options.info_log);
-  }
-
-  bool new_db = false;
-  Status st = TitanCloudHelper::InitializeCloudFS(
-      options, dbname, persistent_cache_path, persistent_cache_size_gb,
-      read_only, &new_db);
-  if (!st.ok()) {
-    return st;
-  }
-
+Status TitanDB::OpenWithCloud(const TitanOptions& options,
+                              const std::string& dbname, TitanDB** db,
+                              bool read_only) {
   TitanDBOptions db_options(options);
   TitanCFOptions cf_options(options);
   std::vector<TitanCFDescriptor> descs;
   descs.emplace_back(kDefaultColumnFamilyName, cf_options);
   std::vector<ColumnFamilyHandle*> handles;
-  st = Open(db_options, dbname, descs, &handles, db);
-  if (st.ok()) {
+  auto s = OpenWithCloud(options, dbname, descs, &handles, db, read_only);
+  if (s.ok()) {
     assert(handles.size() == 1);
     // DBImpl is always holding the default handle.
     delete handles[0];
+  }
+  return s;
+}
+
+Status TitanDB::OpenWithCloud(const TitanOptions& options,
+                              const std::string& dbname,
+                              const std::vector<TitanCFDescriptor>& descs,
+                              std::vector<ColumnFamilyHandle*>* handles,
+                              TitanDB** db, bool read_only) {
+  bool new_db = false;
+  Status s = TitanCloudHelper::InitializeCloudResources(options, dbname,
+                                                        read_only, &new_db);
+  if (!s.ok()) {
+    return s;
+  }
+
+  TitanDBOptions db_options(options);
+  auto impl = new TitanDBImpl(db_options, dbname);
+  s = impl->Open(descs, handles);
+  if (s.ok()) {
+    *db = impl;
   } else {
-    return st;
-  }
-
-  st = TitanCloudHelper::FinalizeCloudDB(options, dbname, new_db, *db);
-  if (!st.ok()) {
-    delete *db;
     *db = nullptr;
+    delete impl;
   }
 
-  return st;
+  s = TitanCloudHelper::FinalizeCloudSetup(options, dbname, new_db, *db);
+  if (!s.ok()) {
+    *db = nullptr;
+    delete impl;
+  }
+
+  return s;
 }
 
 }  // namespace titandb
