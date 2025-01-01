@@ -65,7 +65,19 @@ class TitanFileSystem : public FileSystem {
   IOStatus GetChildren(const std::string& dir, const IOOptions& options,
                        std::vector<std::string>* result,
                        IODebugContext* dbg) override {
-    return GetAppropriateFS("")->GetChildren(dir, options, result, dbg);
+    std::vector<std::string> tmp;
+    auto st = GetAppropriateFS("")->GetChildren(dir, options, &tmp, dbg);
+    // CloudFileSystem's GetChildren not really uses dir, parse results temporarily
+    if (st.ok() && Slice(dir).ends_with("titandb")) {
+      const std::string prefix = "titandb/";
+      result->clear();
+      for (const auto& entry : tmp) {
+        if (entry.find(prefix) != std::string::npos) {
+          result->push_back(entry.substr(prefix.size()));
+        }
+      }
+    }
+    return st;
   }
 
   IOStatus CreateDir(const std::string& dirname, const IOOptions& options,
@@ -109,13 +121,13 @@ class TitanFileSystem : public FileSystem {
 
   IOStatus UnlockFile(FileLock* lock, const IOOptions& options,
                       IODebugContext* dbg) override {
-    // FJY: TODO: Check whether this is ok
+    // TODO(fjy): Check whether this is ok
     return GetAppropriateFS("")->UnlockFile(lock, options, dbg);
   }
 
   IOStatus GetTestDirectory(const IOOptions& options, std::string* path,
                             IODebugContext* dbg) override {
-    // FJY: TODO: Check whether this is ok
+    // TODO(fjy): Check whether this is ok
     return GetAppropriateFS("")->GetTestDirectory(options, path, dbg);
   }
 

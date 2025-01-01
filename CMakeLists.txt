@@ -158,7 +158,7 @@ if (WITH_TITAN_TESTS AND (CMAKE_BUILD_TYPE STREQUAL "Debug"))
     find_package(AWSSDK REQUIRED COMPONENTS s3 transfer kinesis)
 
     list(APPEND TEST_LIBS ${AWSSDK_LINK_LIBRARIES})
-    list(APPEND TESTS blob_cloud_test)
+    list(APPEND TESTS blob_cloud_test blob_cloud_gc_job_test)
   endif()
 
   foreach(test ${TESTS})

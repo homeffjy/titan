@@ -40,6 +40,7 @@ class BlobGCJob {
  private:
   class GarbageCollectionWriteCallback;
   friend class BlobGCJobTest;
+  friend class CloudGCJobTest;
 
   void UpdateInternalOpStats();
 
