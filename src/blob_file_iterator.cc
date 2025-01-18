@@ -145,6 +145,11 @@ void BlobFileIterator::IterateForPrev(uint64_t offset) {
 }
 
 void BlobFileIterator::PrefetchAndGet() {
+  if (iterate_offset_ >= end_of_blob_record_) {
+    valid_ = false;
+    return;
+  }
+
   FixedSlice<kRecordHeaderSize> header_buffer;
   // Since BlobFileIterator is only used for GC, we always set IO priority to
   // low.

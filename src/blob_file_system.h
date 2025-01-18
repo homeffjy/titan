@@ -151,11 +151,20 @@ class TitanFileSystem : public FileSystem {
 
   auto GetAppropriateFS(const std::string& fname)
       -> std::shared_ptr<FileSystem> {
-    return IsTitanFile(fname) ? cloud_fs_ : base_fs_;
+    return IsSstFile(fname) || (IsTitanFile(fname) && IsManifestFile(fname))
+               ? base_fs_
+               : cloud_fs_;
   }
 
   static bool IsTitanFile(const std::string& fname) {
-    return not Slice(fname).ends_with("sst");
+    size_t offset_1 = fname.find_last_of(pathsep);
+    if (offset_1 != std::string::npos) {
+      size_t offset_2 = fname.find_last_of(pathsep, offset_1 - 1);
+      if (offset_2 != std::string::npos) {
+        return fname.substr(offset_2 + 1, offset_1 - offset_2 - 1) == "titandb";
+      }
+    }
+    return false;
   }
 };
 

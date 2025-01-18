@@ -78,6 +78,7 @@ Status TitanDB::OpenWithCloud(const TitanOptions& options,
   } else {
     *db = nullptr;
     delete impl;
+    return s;
   }
 
   s = TitanCloudHelper::FinalizeCloudSetup(options, dbname, new_db, *db);

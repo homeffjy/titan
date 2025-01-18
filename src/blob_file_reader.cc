@@ -5,7 +5,9 @@
 #endif
 
 #include <cinttypes>
+#include <memory>
 
+#include "file/file_util.h"
 #include "file/filename.h"
 #include "file/readahead_raf.h"
 #include "rocksdb/cache.h"
@@ -15,8 +17,6 @@
 #include "test_util/sync_point.h"
 #include "util/crc32c.h"
 #include "util/string_util.h"
-
-#include "titan_stats.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -135,15 +135,34 @@ Status BlobFileReader::Get(const ReadOptions& _options,
   Slice blob;
   CacheAllocationPtr ubuf =
       AllocateBlock(handle.size, options_.memory_allocator());
-  Status s = file_->Read(IOOptions(), handle.offset, handle.size, &blob,
-                         ubuf.get(), nullptr /*aligned_buf*/);
-  if (!s.ok()) {
-    return s;
+
+  Status s;
+  bool prefetched = false;
+  if (prefetch_buffer_) {
+    IOOptions io_options;
+
+    s = file_->PrepareIOOptions(_options, io_options);
+    if (!s.ok()) {
+      return s;
+    }
+    prefetched = prefetch_buffer_->TryReadFromCache(
+        io_options, file_.get(), handle.offset, handle.size, &blob, &s);
+    if (!s.ok()) {
+      return s;
+    }
   }
-  if (handle.size != static_cast<uint64_t>(blob.size())) {
-    return Status::Corruption(
-        "ReadRecord actual size: " + std::to_string(blob.size()) +
-        " not equal to blob size " + std::to_string(handle.size));
+
+  if (!prefetched) {
+    s = file_->Read(IOOptions(), handle.offset, handle.size, &blob, ubuf.get(),
+                    nullptr /*aligned_buf*/);
+    if (!s.ok()) {
+      return s;
+    }
+    if (handle.size != static_cast<uint64_t>(blob.size())) {
+      return Status::Corruption(
+          "ReadRecord actual size: " + std::to_string(blob.size()) +
+          " not equal to blob size " + std::to_string(handle.size));
+    }
   }
 
   BlobDecoder decoder(uncompression_dict_ == nullptr
@@ -167,9 +186,19 @@ Status BlobFilePrefetcher::Get(const ReadOptions& options,
       readahead_size_ = std::max(handle.size, readahead_size_);
       IOOptions io_options;
       io_options.rate_limiter_priority = Env::IOPriority::IO_HIGH;
-      reader_->file_->Prefetch(io_options, handle.offset, readahead_size_);
-      readahead_limit_ = handle.offset + readahead_size_;
-      readahead_size_ = std::min(kMaxReadaheadSize, readahead_size_ * 2);
+      Status s =
+          reader_->file_->Prefetch(io_options, handle.offset, readahead_size_);
+      if (s.ok()) {
+        readahead_limit_ = handle.offset + readahead_size_;
+        readahead_size_ = std::min(kMaxReadaheadSize, readahead_size_ * 2);
+      } else if (!s.IsNotSupported()) {
+        return s;
+      }
+      // Create file prefetch buffer if not exists
+      if (!reader_->prefetch_buffer_) {
+        reader_->prefetch_buffer_ =
+            std::make_shared<FilePrefetchBuffer>(readahead_size_, kMaxReadaheadSize);
+      }
     }
   } else {
     last_offset_ = handle.offset + handle.size;
