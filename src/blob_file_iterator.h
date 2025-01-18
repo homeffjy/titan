@@ -1,15 +1,13 @@
 #pragma once
 
 #include <cstdint>
-
 #include <queue>
 
+#include "blob_format.h"
 #include "file/random_access_file_reader.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
 #include "table/internal_iterator.h"
-
-#include "blob_format.h"
 #include "titan/options.h"
 #include "util.h"
 
@@ -53,6 +51,8 @@ class BlobFileIterator {
   const uint64_t file_size_;
   TitanCFOptions titan_cf_options_;
 
+  std::unique_ptr<FilePrefetchBuffer> prefetch_buffer_;
+
   bool init_{false};
   uint64_t end_of_blob_record_{0};
 
@@ -72,12 +72,11 @@ class BlobFileIterator {
   uint64_t header_size_;
   uint64_t block_size_;
 
-  uint64_t readahead_begin_offset_{0};
-  uint64_t readahead_end_offset_{0};
-  uint64_t readahead_size_{kMinReadaheadSize};
+  // uint64_t readahead_begin_offset_{0};
+  // uint64_t readahead_end_offset_{0};
+  // uint64_t readahead_size_{kMinReadaheadSize};
 
   void PrefetchAndGet();
-  void GetBlobRecord();
   uint64_t AdjustOffsetToNextBlockHead();
 };
 
@@ -106,9 +105,9 @@ class BlobFileMergeIterator {
    public:
     // The default constructor is not supposed to be used.
     // It is only to make std::priority_queue can compile.
-    BlobFileIterComparator() : comparator_(nullptr){};
+    BlobFileIterComparator() : comparator_(nullptr) {};
     explicit BlobFileIterComparator(const Comparator* comparator)
-        : comparator_(comparator){};
+        : comparator_(comparator) {};
     // Smaller value get Higher priority
     bool operator()(const BlobFileIterator* iter1,
                     const BlobFileIterator* iter2) {

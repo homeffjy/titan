@@ -152,7 +152,7 @@ class CloudGCJobTest : public testing::Test {
     ASSERT_OK(CloudFileSystemEnv::NewAwsFileSystem(base_env_->GetFileSystem(),
                                                    cloud_fs_options_,
                                                    options_.info_log, &cfs));
-    titandb::TitanFileSystem* tfs;
+    TitanFileSystem* tfs;
     auto t = std::shared_ptr<CloudFileSystem>(cfs);
     ASSERT_OK(titandb::TitanFileSystem::NewTitanFileSystem(
         base_env_->GetFileSystem(), t, &tfs));

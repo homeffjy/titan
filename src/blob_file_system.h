@@ -21,7 +21,7 @@ class TitanFileSystem : public FileSystem {
   }
 
   static const char* kClassName() { return "titan-router"; }
-  const char* Name() const { return kClassName(); }
+  const char* Name() const override { return kClassName(); }
 
   IOStatus NewSequentialFile(const std::string& fname,
                              const FileOptions& options,
@@ -65,15 +65,15 @@ class TitanFileSystem : public FileSystem {
   IOStatus GetChildren(const std::string& dir, const IOOptions& options,
                        std::vector<std::string>* result,
                        IODebugContext* dbg) override {
-    std::vector<std::string> tmp;
-    auto st = GetAppropriateFS("")->GetChildren(dir, options, &tmp, dbg);
-    // CloudFileSystem's GetChildren not really uses dir, parse results temporarily
-    if (st.ok() && Slice(dir).ends_with("titandb")) {
-      const std::string prefix = "titandb/";
+    auto st = GetAppropriateFS("")->GetChildren(dir, options, result, dbg);
+    // CloudFileSystem's GetChildren doesn't use dir, parse result temporarily
+    const std::string prefix = "titandb";
+    if (st.ok() && Slice(dir).ends_with(prefix)) {
+      std::vector<std::string> tmp = std::move(*result);
       result->clear();
       for (const auto& entry : tmp) {
         if (entry.find(prefix) != std::string::npos) {
-          result->push_back(entry.substr(prefix.size()));
+          result->push_back(entry.substr(prefix.size() + 1));
         }
       }
     }
@@ -121,13 +121,11 @@ class TitanFileSystem : public FileSystem {
 
   IOStatus UnlockFile(FileLock* lock, const IOOptions& options,
                       IODebugContext* dbg) override {
-    // TODO(fjy): Check whether this is ok
     return GetAppropriateFS("")->UnlockFile(lock, options, dbg);
   }
 
   IOStatus GetTestDirectory(const IOOptions& options, std::string* path,
                             IODebugContext* dbg) override {
-    // TODO(fjy): Check whether this is ok
     return GetAppropriateFS("")->GetTestDirectory(options, path, dbg);
   }
 
