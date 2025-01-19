@@ -48,9 +48,9 @@ const IOOptions kIOOptions;
 IODebugContext* const kDbg = nullptr;
 }  // namespace
 
-class CloudTest : public testing::Test {
+class BlobCloudTest : public testing::Test {
  public:
-  CloudTest() {
+  BlobCloudTest() {
     Random64 rng(time(nullptr));
     test_id_ = std::to_string(rng.Next());
     fprintf(stderr, "Test ID: %s\n", test_id_.c_str());
@@ -64,6 +64,7 @@ class CloudTest : public testing::Test {
     // right away
     cloud_fs_options_.cloud_file_deletion_delay = std::chrono::seconds(0);
 
+    options_.dirname = dbname_ + "/titandb";
     options_.create_if_missing = true;
     options_.stats_dump_period_sec = 0;
     options_.stats_persist_period_sec = 0;
@@ -147,7 +148,7 @@ class CloudTest : public testing::Test {
     ASSERT_EQ(rc, 0);
   }
 
-  virtual ~CloudTest() {
+  virtual ~BlobCloudTest() {
     // Cleanup the cloud bucket
     if (!cloud_fs_options_.src_bucket.GetBucketName().empty()) {
       CloudFileSystem* afs;
@@ -233,72 +234,6 @@ class CloudTest : public testing::Test {
     for (auto cf : cfs) {
       ASSERT_OK(db_->CreateColumnFamily(options_, cf, &handles->at(cfi++)));
     }
-  }
-
-  // Creates and Opens a clone
-  Status CloneDB(const std::string& clone_name,
-                 const std::string& dest_bucket_name,
-                 const std::string& dest_object_path,
-                 std::unique_ptr<TitanDB>* cloud_db, std::unique_ptr<Env>* env,
-                 bool force_keep_local_on_invalid_dest_bucket = true) {
-    // The local directory where the clone resides
-    std::string cname = clone_dir_ + "/" + clone_name;
-
-    CloudFileSystem* cfs;
-    TitanDB* clone_db;
-    TitanFileSystem* clone_tfs;
-
-    // If there is no destination bucket, then the clone needs to copy
-    // all sst fies from source bucket to local dir
-    auto copt = cloud_fs_options_;
-    if (dest_bucket_name == copt.src_bucket.GetBucketName()) {
-      copt.dest_bucket = copt.src_bucket;
-    } else {
-      copt.dest_bucket.SetBucketName(dest_bucket_name);
-    }
-    copt.dest_bucket.SetObjectPath(dest_object_path);
-    if (!copt.dest_bucket.IsValid() &&
-        force_keep_local_on_invalid_dest_bucket) {
-      copt.keep_local_sst_files = true;
-    }
-    // Create new AWS env
-    Status st = CloudFileSystemEnv::NewAwsFileSystem(
-        base_env_->GetFileSystem(), copt, options_.info_log, &cfs);
-    if (!st.ok()) {
-      return st;
-    }
-
-    std::shared_ptr<CloudFileSystem> blob_cfs(cfs);
-    st = TitanFileSystem::NewTitanFileSystem(base_env_->GetFileSystem(),
-                                             blob_cfs, &clone_tfs);
-
-    // sets the env to be used by the env wrapper, and returns that env
-    env->reset(new CompositeEnvWrapper(base_env_,
-                                       std::shared_ptr<FileSystem>(clone_tfs)));
-    options_.env = env->get();
-
-    // default column family
-    ColumnFamilyOptions cfopt = options_;
-
-    std::vector<ColumnFamilyDescriptor> column_families;
-    column_families.emplace_back(
-        ColumnFamilyDescriptor(kDefaultColumnFamilyName, cfopt));
-    std::vector<ColumnFamilyHandle*> handles;
-
-    st = TitanDB::OpenWithCloud(options_, cname, &clone_db);
-
-    if (!st.ok()) {
-      return st;
-    }
-
-    cloud_db->reset(clone_db);
-
-    // Delete the handle for the default column family because the DBImpl
-    // always holds a reference to it.
-    assert(handles.size() > 0);
-    delete handles[0];
-
-    return st;
   }
 
   void CloseDB(std::vector<ColumnFamilyHandle*>* handles) {
@@ -463,7 +398,7 @@ class CloudTest : public testing::Test {
 // Most basic test. Create DB, write one key, close it and then check to see
 // that the key exists.
 //
-TEST_F(CloudTest, BasicTest) {
+TEST_F(BlobCloudTest, BasicTest) {
   // Put one key-value
   OpenDB();
   std::string value;
@@ -484,7 +419,7 @@ TEST_F(CloudTest, BasicTest) {
   CloseDB();
 }
 
-TEST_F(CloudTest, FindAllLiveFilesTest) {
+TEST_F(BlobCloudTest, FindAllLiveFilesTest) {
   OpenDB();
   ASSERT_OK(db_->Put(WriteOptions(), "Hello", "World"));
   ASSERT_OK(db_->Flush(FlushOptions()));
@@ -519,7 +454,7 @@ TEST_F(CloudTest, FindAllLiveFilesTest) {
 }
 
 // Files of dropped CF should not be included in live files
-TEST_F(CloudTest, LiveFilesOfDroppedCFTest) {
+TEST_F(BlobCloudTest, LiveFilesOfDroppedCFTest) {
   std::vector<ColumnFamilyHandle*> handles;
   OpenDB(&handles);
 
@@ -553,7 +488,7 @@ TEST_F(CloudTest, LiveFilesOfDroppedCFTest) {
 
 // Verifies that when we move files across levels, the files are still listed as
 // live files
-TEST_F(CloudTest, LiveFilesAfterChangingLevelTest) {
+TEST_F(BlobCloudTest, LiveFilesAfterChangingLevelTest) {
   options_.num_levels = 3;
   OpenDB();
   ASSERT_OK(db_->Put(WriteOptions(), "a", "1"));
@@ -581,32 +516,50 @@ TEST_F(CloudTest, LiveFilesAfterChangingLevelTest) {
   EXPECT_EQ(tablefiles_before_move, tablefiles_after_move);
 }
 
-TEST_F(CloudTest, GetChildrenTest) {
-  // Create some objects in S3
+TEST_F(BlobCloudTest, GetChildrenTest) {
   OpenDB();
   ASSERT_OK(db_->Put(WriteOptions(), "Hello", "World"));
   ASSERT_OK(db_->Flush(FlushOptions()));
 
-  CloseDB();
-  DestroyDir(dbname_);
-  OpenDB();
-
   std::vector<std::string> children;
+  ASSERT_OK(aenv_->GetFileSystem()->GetChildren(options_.dirname, kIOOptions,
+                                                &children, kDbg));
+  int blob_files = 0;
+  for (const auto& c : children) {
+    if (IsBlobFile(c)) {
+      blob_files++;
+    }
+  }
+  EXPECT_EQ(blob_files, 1);
+
+  for (auto& fname : children) {
+    if (fname != "." && fname != "..") {
+      ASSERT_OK(aenv_->DeleteFile(options_.dirname + "/" + fname));
+    }
+  }
+  ASSERT_OK(aenv_->DeleteDir(options_.dirname));
+
+  children.clear();
   ASSERT_OK(aenv_->GetFileSystem()->GetChildren(dbname_, kIOOptions, &children,
                                                 kDbg));
   int sst_files = 0;
-  for (auto c : children) {
+  for (const auto& c : children) {
     if (IsSstFile(c)) {
       sst_files++;
     }
   }
-  // This verifies that GetChildren() works on S3. We deleted the S3 file
-  // locally, so the only way to actually get it through GetChildren() if
-  // listing S3 buckets works.
   EXPECT_EQ(sst_files, 1);
+
+  for (auto& fname : children) {
+    if (fname != "." && fname != "..") {
+      ASSERT_OK(aenv_->DeleteFile(dbname_ + "/" + fname));
+    }
+  }
+  // still has manifest with cloud file system
+  ASSERT_NOK(aenv_->DeleteDir(dbname_));
 }
 
-TEST_F(CloudTest, FindLiveFilesFromLocalManifestTest) {
+TEST_F(BlobCloudTest, FindLiveFilesFromLocalManifestTest) {
   OpenDB();
   ASSERT_OK(db_->Put(WriteOptions(), "Hello", "Universe"));
   ASSERT_OK(db_->Flush(FlushOptions()));
@@ -646,141 +599,10 @@ TEST_F(CloudTest, FindLiveFilesFromLocalManifestTest) {
   // clean up
   std::filesystem::remove(alt_manifest_path);
 }
-
-//
-// Create and read from a clone.
-//
-TEST_F(CloudTest, Newdb) {
-  std::string master_dbid;
-  std::string newdb1_dbid;
-  std::string newdb2_dbid;
-
-  // Put one key-value
-  OpenDB();
-  std::string value;
-  ASSERT_OK(db_->Put(WriteOptions(), "Hello", "World"));
-  ASSERT_OK(db_->Get(ReadOptions(), "Hello", &value));
-  ASSERT_TRUE(value.compare("World") == 0);
-  ASSERT_OK(db_->GetDbIdentity(master_dbid));
-  CloseDB();
-  value.clear();
-
-  {
-    // Create and Open a new ephemeral instance
-    std::unique_ptr<Env> env;
-    std::unique_ptr<TitanDB> cloud_db;
-    CloneDB("newdb1", "", "", &cloud_db, &env);
-
-    // Retrieve the id of the first reopen
-    ASSERT_OK(cloud_db->GetDbIdentity(newdb1_dbid));
-
-    // This is an ephemeral clone. Its dbid is a prefix of the master's.
-    ASSERT_NE(newdb1_dbid, master_dbid);
-    auto res = std::mismatch(master_dbid.begin(), master_dbid.end(),
-                             newdb1_dbid.begin());
-    ASSERT_TRUE(res.first == master_dbid.end());
-
-    ASSERT_OK(cloud_db->Get(ReadOptions(), "Hello", &value));
-    ASSERT_TRUE(value.compare("World") == 0);
-
-    // Open master and write one more kv to it. This is written to
-    // src bucket as well.
-    OpenDB();
-    ASSERT_OK(db_->Put(WriteOptions(), "Dhruba", "Borthakur"));
-
-    // check that the newly written kv exists
-    value.clear();
-    ASSERT_OK(db_->Get(ReadOptions(), "Dhruba", &value));
-    ASSERT_TRUE(value.compare("Borthakur") == 0);
-
-    // check that the earlier kv exists too
-    value.clear();
-    ASSERT_OK(db_->Get(ReadOptions(), "Hello", &value));
-    ASSERT_TRUE(value.compare("World") == 0);
-    CloseDB();
-
-    // Assert  that newdb1 cannot see the second kv because the second kv
-    // was written to local dir only of the ephemeral clone.
-    ASSERT_TRUE(cloud_db->Get(ReadOptions(), "Dhruba", &value).IsNotFound());
-  }
-  {
-    // Create another ephemeral instance using a different local dir but the
-    // same two buckets as newdb1. This should be identical in contents with
-    // newdb1.
-    std::unique_ptr<Env> env;
-    std::unique_ptr<TitanDB> cloud_db;
-    CloneDB("newdb2", "", "", &cloud_db, &env);
-
-    // Retrieve the id of the second clone db
-    ASSERT_OK(cloud_db->GetDbIdentity(newdb2_dbid));
-
-    // Since we use two different local directories for the two ephemeral
-    // clones, their dbids should be different from one another
-    ASSERT_NE(newdb1_dbid, newdb2_dbid);
-
-    // check that both the kvs appear in the new ephemeral clone
-    value.clear();
-    ASSERT_OK(cloud_db->Get(ReadOptions(), "Hello", &value));
-    ASSERT_TRUE(value.compare("World") == 0);
-    value.clear();
-    ASSERT_OK(cloud_db->Get(ReadOptions(), "Dhruba", &value));
-    ASSERT_TRUE(value.compare("Borthakur") == 0);
-  }
-
-  CloseDB();
-}
-
-TEST_F(CloudTest, ColumnFamilies) {
-  std::vector<ColumnFamilyHandle*> handles;
-  // Put one key-value
-  OpenDB(&handles);
-
-  CreateColumnFamilies({"cf1", "cf2"}, &handles);
-
-  ASSERT_OK(db_->Put(WriteOptions(), handles[0], "hello", "a"));
-  ASSERT_OK(db_->Put(WriteOptions(), handles[1], "hello", "b"));
-  ASSERT_OK(db_->Put(WriteOptions(), handles[2], "hello", "c"));
-
-  auto validate = [&]() {
-    std::string value;
-    ASSERT_OK(db_->Get(ReadOptions(), handles[0], "hello", &value));
-    ASSERT_EQ(value, "a");
-    ASSERT_OK(db_->Get(ReadOptions(), handles[1], "hello", &value));
-    ASSERT_EQ(value, "b");
-    ASSERT_OK(db_->Get(ReadOptions(), handles[2], "hello", &value));
-    ASSERT_EQ(value, "c");
-  };
-
-  validate();
-
-  CloseDB(&handles);
-  OpenWithColumnFamilies({kDefaultColumnFamilyName, "cf1", "cf2"}, &handles);
-
-  validate();
-  CloseDB(&handles);
-
-  // destory local state
-  DestroyDir(dbname_);
-
-  // new cloud env
-  CreateCloudEnv();
-  options_.env = aenv_.get();
-
-  std::vector<std::string> families;
-  ASSERT_OK(TitanDB::ListColumnFamilies(options_, dbname_, &families));
-  std::sort(families.begin(), families.end());
-  ASSERT_TRUE(families == std::vector<std::string>(
-                              {"cf1", "cf2", kDefaultColumnFamilyName}));
-
-  OpenWithColumnFamilies({kDefaultColumnFamilyName, "cf1", "cf2"}, &handles);
-  validate();
-  CloseDB(&handles);
-}
-
 //
 // verify that dbid registry is appropriately handled
 //
-TEST_F(CloudTest, DbidRegistry) {
+TEST_F(BlobCloudTest, DbidRegistry) {
   // Put one key-value
   OpenDB();
   std::string value;

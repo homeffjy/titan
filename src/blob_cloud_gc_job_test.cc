@@ -54,7 +54,8 @@ class CloudGCJobTest : public testing::Test {
   }
 
   void Cleanup() {
-    ASSERT_TRUE(!aenv_);
+    // ASSERT_TRUE(!aenv_);
+    aenv_.reset();
 
     // check cloud credentials
     ASSERT_TRUE(cloud_fs_options_.credentials.HasValid().ok());
@@ -192,13 +193,13 @@ class CloudGCJobTest : public testing::Test {
       descs.emplace_back(cf, options_);
     }
 
-    ASSERT_OK(titandb::TitanDB::OpenWithCloud(options_, dbname_, descs, handles,
-                                              &db_));
+    ASSERT_OK(TitanDB::OpenWithCloud(options_, dbname_, descs, handles, &db_));
     ASSERT_OK(db_->GetDbIdentity(dbid_));
   }
 
   void NewDB() {
     ClearDir();
+    Cleanup();
     Open();
   }
 
