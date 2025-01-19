@@ -7,6 +7,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
+#include <aws/core/Aws.h>
+
+#include "blob_file_system.h"
+#include "rocksdb/cloud/cloud_file_system.h"
+
 #ifdef GFLAGS
 #ifdef NUMA
 #include <numa.h>
@@ -23,12 +28,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
-#include <iostream>
 
 #include <atomic>
 #include <cinttypes>
 #include <condition_variable>
 #include <cstddef>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -755,6 +760,8 @@ DEFINE_uint64(blob_db_min_blob_size, 0,
 
 // Titan Options
 DEFINE_bool(use_titan, true, "Open a Titan instance.");
+
+DEFINE_bool(use_cloud, false, "Open a Cloud instance.");
 
 DEFINE_bool(titan_level_merge, false, "Enable Titan level merge.");
 
@@ -2497,6 +2504,7 @@ class Benchmark {
         blob_db::DestroyBlobDB(FLAGS_db, options, blob_db::BlobDBOptions());
       }
 #endif  // !ROCKSDB_LITE
+      // TODO(fjy): remove cloud related CLOUDMANIFEST, MANIFEST-(0x)??, titandb
       DestroyDB(FLAGS_db, options);
       if (!FLAGS_wal_dir.empty()) {
         FLAGS_env->DeleteDir(FLAGS_wal_dir);
@@ -3809,6 +3817,37 @@ class Benchmark {
   void OpenDb(titandb::TitanOptions options, const std::string& db_name,
               DBWithColumnFamilies* db) {
     Status s;
+    if (FLAGS_use_cloud) {
+      // TODO: for test, to remove
+      options.min_blob_size = 0;
+
+      CloudFileSystemOptions cfs_options;
+      cfs_options.TEST_Initialize("titan-test.", db_name);
+      if (!cfs_options.credentials.HasValid().ok()) {
+        fprintf(stderr, "Failed to initialize credentials.\n");
+        exit(1);
+      }
+
+      CloudFileSystem* cfs;
+      s = CloudFileSystemEnv::NewAwsFileSystem(
+          FileSystem::Default(), cfs_options, options.info_log, &cfs);
+      if (!s.ok()) {
+        fprintf(stderr, "NewAwsFileSystem error %s\n", s.ToString().c_str());
+        exit(1);
+      }
+
+      titandb::TitanFileSystem* tfs;
+      std::shared_ptr<CloudFileSystem> c(cfs);
+      s = titandb::TitanFileSystem::NewTitanFileSystem(FileSystem::Default(), c,
+                                                       &tfs);
+      if (!s.ok()) {
+        fprintf(stderr, "NewTitanFileSystem error %s\n", s.ToString().c_str());
+        exit(1);
+      }
+
+      std::shared_ptr<FileSystem> fs(tfs);
+      options.env = NewCompositeEnv(fs).release();
+    }
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {
       size_t num_hot = FLAGS_num_column_families;
@@ -3868,6 +3907,18 @@ class Benchmark {
         if (s.ok()) {
           db->db = ptr;
         }
+      } else if (FLAGS_use_cloud) {
+        std::vector<titandb::TitanCFDescriptor> titan_column_families;
+        for (size_t i = 0; i < num_hot; i++) {
+          titan_column_families.push_back(titandb::TitanCFDescriptor(
+              ColumnFamilyName(i), titandb::TitanCFOptions(options)));
+        }
+        titandb::TitanDB* ptr;
+        s = titandb::TitanDB::OpenWithCloud(
+            options, db_name, titan_column_families, &db->cfh, &ptr);
+        if (s.ok()) {
+          db->db = ptr;
+        }
       } else if (FLAGS_use_titan) {
         std::vector<titandb::TitanCFDescriptor> titan_column_families;
         for (size_t i = 0; i < num_hot; i++) {
@@ -3924,6 +3975,12 @@ class Benchmark {
       blob_db_options.blob_file_size = FLAGS_blob_db_file_size;
       blob_db::BlobDB* ptr = nullptr;
       s = blob_db::BlobDB::Open(options, blob_db_options, db_name, &ptr);
+      if (s.ok()) {
+        db->db = ptr;
+      }
+    } else if (FLAGS_use_cloud) {
+      titandb::TitanDB* ptr;
+      s = titandb::TitanDB::OpenWithCloud(options, db_name, &ptr);
       if (s.ok()) {
         db->db = ptr;
       }
@@ -6452,8 +6509,14 @@ int db_bench_tool(int argc, char** argv) {
     exit(1);
   }
 
+  if (FLAGS_use_cloud) {
+    Aws::InitAPI(Aws::SDKOptions());
+  }
   rocksdb::Benchmark benchmark;
   benchmark.Run();
+  if (FLAGS_use_cloud) {
+    Aws::ShutdownAPI(Aws::SDKOptions());
+  }
 
 #ifndef ROCKSDB_LITE
   if (FLAGS_print_malloc_stats) {
