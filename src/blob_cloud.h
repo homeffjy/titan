@@ -15,6 +15,10 @@ class TitanCloudHelper {
                                 const std::string& dbname, bool new_db,
                                 const TitanDB* db);
 
+  static Status DestroyCloudDB(const std::string& dbname,
+                               const TitanOptions& options,
+                               const CloudFileSystemOptions& cfs_options);
+
  private:
   static Status SetupCloudManifest(const std::shared_ptr<CloudFileSystem>& cfs,
                                    const TitanOptions& options,

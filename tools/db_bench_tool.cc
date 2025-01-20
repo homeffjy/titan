@@ -8,6 +8,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include <aws/core/Aws.h>
+#include <blob_cloud.h>
 
 #include "blob_file_system.h"
 #include "rocksdb/cloud/cloud_file_system.h"
@@ -2114,6 +2115,7 @@ class Benchmark {
   WriteOptions write_options_;
   titandb::TitanOptions
       open_options_;  // keep options around to properly destroy db later
+  CloudFileSystemOptions cfs_options_;
 #ifndef ROCKSDB_LITE
   TraceOptions trace_options_;
   TraceOptions block_cache_trace_options_;
@@ -2487,6 +2489,14 @@ class Benchmark {
       exit(1);
     }
 
+    if (FLAGS_use_cloud) {
+      cfs_options_.TEST_Initialize("titan-test.", FLAGS_db);
+      if (!cfs_options_.credentials.HasValid().ok()) {
+        fprintf(stderr, "Failed to initialize credentials.\n");
+        exit(1);
+      }
+    }
+
     std::vector<std::string> files;
     FLAGS_env->GetChildren(FLAGS_db, &files);
     for (size_t i = 0; i < files.size(); i++) {
@@ -2504,8 +2514,12 @@ class Benchmark {
         blob_db::DestroyBlobDB(FLAGS_db, options, blob_db::BlobDBOptions());
       }
 #endif  // !ROCKSDB_LITE
-      // TODO(fjy): remove cloud related CLOUDMANIFEST, MANIFEST-(0x)??, titandb
       DestroyDB(FLAGS_db, options);
+      // TODO(fjy): remove cloud related CLOUDMANIFEST, MANIFEST-(0x)??, titandb
+      if (FLAGS_use_cloud) {
+        titandb::TitanCloudHelper::DestroyCloudDB(FLAGS_db, options,
+                                                  cfs_options_);
+      }
       if (!FLAGS_wal_dir.empty()) {
         FLAGS_env->DeleteDir(FLAGS_wal_dir);
       }
@@ -2916,6 +2930,10 @@ class Benchmark {
           if (db_.db != nullptr) {
             db_.DeleteDBs();
             DestroyDB(FLAGS_db, open_options_);
+            if (FLAGS_use_cloud) {
+              titandb::TitanCloudHelper::DestroyCloudDB(FLAGS_db, open_options_,
+                                                        cfs_options_);
+            }
           }
           titandb::TitanOptions options = open_options_;
           for (size_t i = 0; i < multi_dbs_.size(); i++) {
@@ -2924,6 +2942,10 @@ class Benchmark {
               options.wal_dir = GetPathForMultiple(open_options_.wal_dir, i);
             }
             DestroyDB(GetPathForMultiple(FLAGS_db, i), options);
+            if (FLAGS_use_cloud) {
+              titandb::TitanCloudHelper::DestroyCloudDB(
+                  GetPathForMultiple(FLAGS_db, i), options, cfs_options_);
+            }
           }
           multi_dbs_.clear();
         }
@@ -3818,19 +3840,9 @@ class Benchmark {
               DBWithColumnFamilies* db) {
     Status s;
     if (FLAGS_use_cloud) {
-      // TODO: for test, to remove
-      options.min_blob_size = 0;
-
-      CloudFileSystemOptions cfs_options;
-      cfs_options.TEST_Initialize("titan-test.", db_name);
-      if (!cfs_options.credentials.HasValid().ok()) {
-        fprintf(stderr, "Failed to initialize credentials.\n");
-        exit(1);
-      }
-
       CloudFileSystem* cfs;
       s = CloudFileSystemEnv::NewAwsFileSystem(
-          FileSystem::Default(), cfs_options, options.info_log, &cfs);
+          FileSystem::Default(), cfs_options_, options.info_log, &cfs);
       if (!s.ok()) {
         fprintf(stderr, "NewAwsFileSystem error %s\n", s.ToString().c_str());
         exit(1);
@@ -3979,12 +3991,16 @@ class Benchmark {
         db->db = ptr;
       }
     } else if (FLAGS_use_cloud) {
+      // TODO: for test, to remove
+      options.min_blob_size = 0;
       titandb::TitanDB* ptr;
       s = titandb::TitanDB::OpenWithCloud(options, db_name, &ptr);
       if (s.ok()) {
         db->db = ptr;
       }
     } else if (FLAGS_use_titan) {
+      // TODO: for test, to remove
+      options.min_blob_size = 0;
       titandb::TitanDB* ptr;
       s = titandb::TitanDB::Open(options, db_name, &ptr);
       if (s.ok()) {

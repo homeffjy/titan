@@ -1,5 +1,7 @@
 #include "blob_cloud.h"
 
+#include <rocksdb/cloud/cloud_storage_provider.h>
+
 #include "blob_file_system.h"
 #include "env/composite_env_wrapper.h"
 #include "utilities/persistent_cache/block_cache_tier.h"
@@ -119,6 +121,33 @@ Status TitanCloudHelper::FinalizeCloudSetup(const TitanOptions& options,
       dbid.c_str(), st.ToString().c_str());
 
   return st;
+}
+
+Status TitanCloudHelper::DestroyCloudDB(
+    const std::string& dbname, const TitanOptions& options,
+    const CloudFileSystemOptions& cfs_options) {
+  // Clean up cloud
+  CloudFileSystem* cfs;
+  auto status = CloudFileSystemEnv::NewAwsFileSystem(
+      FileSystem::Default(), cfs_options, options.info_log, &cfs);
+  if (!status.ok()) {
+    return status;
+  }
+
+  status =
+      cfs->GetStorageProvider()->EmptyBucket(cfs->GetSrcBucketName(), dbname);
+  if (!status.ok()) {
+    return status;
+  }
+
+  // Destroy local dir
+  std::string cmd = "rm -rf " + dbname;
+  int rc = system(cmd.c_str());
+  if (rc != 0) {
+    return Status::Corruption();
+  }
+
+  return status;
 }
 
 Status TitanCloudHelper::ConfigurePersistentCache(
