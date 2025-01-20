@@ -2490,6 +2490,7 @@ class Benchmark {
     }
 
     if (FLAGS_use_cloud) {
+      Aws::InitAPI(Aws::SDKOptions());
       cfs_options_.TEST_Initialize("titan-test.", FLAGS_db);
       if (!cfs_options_.credentials.HasValid().ok()) {
         fprintf(stderr, "Failed to initialize credentials.\n");
@@ -2515,7 +2516,6 @@ class Benchmark {
       }
 #endif  // !ROCKSDB_LITE
       DestroyDB(FLAGS_db, options);
-      // TODO(fjy): remove cloud related CLOUDMANIFEST, MANIFEST-(0x)??, titandb
       if (FLAGS_use_cloud) {
         titandb::TitanCloudHelper::DestroyCloudDB(FLAGS_db, options,
                                                   cfs_options_);
@@ -2541,6 +2541,9 @@ class Benchmark {
     if (cache_.get() != nullptr) {
       // this will leak, but we're shutting down so nobody cares
       cache_->DisownData();
+    }
+    if (FLAGS_use_cloud) {
+      Aws::ShutdownAPI(Aws::SDKOptions());
     }
   }
 
@@ -3991,16 +3994,12 @@ class Benchmark {
         db->db = ptr;
       }
     } else if (FLAGS_use_cloud) {
-      // TODO: for test, to remove
-      options.min_blob_size = 0;
       titandb::TitanDB* ptr;
       s = titandb::TitanDB::OpenWithCloud(options, db_name, &ptr);
       if (s.ok()) {
         db->db = ptr;
       }
     } else if (FLAGS_use_titan) {
-      // TODO: for test, to remove
-      options.min_blob_size = 0;
       titandb::TitanDB* ptr;
       s = titandb::TitanDB::Open(options, db_name, &ptr);
       if (s.ok()) {
@@ -6525,14 +6524,8 @@ int db_bench_tool(int argc, char** argv) {
     exit(1);
   }
 
-  if (FLAGS_use_cloud) {
-    Aws::InitAPI(Aws::SDKOptions());
-  }
   rocksdb::Benchmark benchmark;
   benchmark.Run();
-  if (FLAGS_use_cloud) {
-    Aws::ShutdownAPI(Aws::SDKOptions());
-  }
 
 #ifndef ROCKSDB_LITE
   if (FLAGS_print_malloc_stats) {

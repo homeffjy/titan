@@ -154,6 +154,7 @@ Status TitanCloudHelper::ConfigurePersistentCache(
     const TitanOptions& options, const std::string& persistent_cache_path,
     const uint64_t& persistent_cache_size_gb,
     const std::unique_ptr<Env>& local_env) {
+  // TODO: I don't know what it is
   Status st;
   // Get existing options. If the persistent cache is already set, then do
   // not make any change. Otherwise, configure it.
