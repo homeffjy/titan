@@ -764,6 +764,10 @@ DEFINE_bool(use_titan, true, "Open a Titan instance.");
 
 DEFINE_bool(use_cloud, false, "Open a Cloud instance.");
 
+DEFINE_string(s3_bucket, "titan-benchmark", "S3 bucket name");
+
+DEFINE_string(s3_region, "ap-northeast-2", "S3 region");
+
 DEFINE_bool(titan_level_merge, false, "Enable Titan level merge.");
 
 DEFINE_bool(titan_range_merge, false, "Enable Titan range merge.");
@@ -2491,11 +2495,19 @@ class Benchmark {
 
     if (FLAGS_use_cloud) {
       Aws::InitAPI(Aws::SDKOptions());
-      cfs_options_.TEST_Initialize("titan-test.", FLAGS_db);
-      if (!cfs_options_.credentials.HasValid().ok()) {
-        fprintf(stderr, "Failed to initialize credentials.\n");
-        exit(1);
-      }
+      // cfs_options_.credentials.InitializeSimple(
+      //     getenv("AWS_ACCESS_KEY_ID"), getenv("AWS_SECRET_ACCESS_KEY"));
+      // if (!cfs_options_.credentials.HasValid().ok()) {
+      //   fprintf(stderr, "Failed to initialize credentials.\n");
+      //   exit(1);
+      // }
+
+      std::string bucketSuffix = getenv("USER");
+      bucketSuffix = "." + bucketSuffix + ".titan-benchmark";
+      cfs_options_.src_bucket.SetBucketName(bucketSuffix, FLAGS_s3_bucket);
+      cfs_options_.src_bucket.SetRegion(FLAGS_s3_region);
+      cfs_options_.src_bucket.SetObjectPath(FLAGS_db);
+      cfs_options_.dest_bucket = cfs_options_.src_bucket;
     }
 
     std::vector<std::string> files;
