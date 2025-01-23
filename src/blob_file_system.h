@@ -5,16 +5,16 @@
 
 namespace rocksdb {
 namespace titandb {
-class TitanFileSystem : public FileSystem {
+class TitanFileSystemProxy : public FileSystem {
  public:
   static Status NewTitanFileSystem(
       const std::shared_ptr<FileSystem>& base_fs,
       const std::shared_ptr<CloudFileSystem>& cloud_fs,
-      TitanFileSystem** result) {
-    *result = new TitanFileSystem(base_fs, cloud_fs);
+      TitanFileSystemProxy** result) {
+    *result = new TitanFileSystemProxy(base_fs, cloud_fs);
     return Status::OK();
   }
-  ~TitanFileSystem() override = default;
+  ~TitanFileSystemProxy() override = default;
 
   auto GetCloudFileSystem() -> std::shared_ptr<CloudFileSystem> {
     return cloud_fs_;
@@ -152,7 +152,7 @@ class TitanFileSystem : public FileSystem {
   }
 
  private:
-  TitanFileSystem(const std::shared_ptr<FileSystem>& base_fs,
+  TitanFileSystemProxy(const std::shared_ptr<FileSystem>& base_fs,
                   const std::shared_ptr<CloudFileSystem>& cloud_fs)
       : base_fs_(base_fs), cloud_fs_(cloud_fs) {};
 

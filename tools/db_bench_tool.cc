@@ -2497,10 +2497,10 @@ class Benchmark {
       Aws::InitAPI(Aws::SDKOptions());
       // cfs_options_.credentials.InitializeSimple(
       //     getenv("AWS_ACCESS_KEY_ID"), getenv("AWS_SECRET_ACCESS_KEY"));
-      // if (!cfs_options_.credentials.HasValid().ok()) {
-      //   fprintf(stderr, "Failed to initialize credentials.\n");
-      //   exit(1);
-      // }
+      if (!cfs_options_.credentials.HasValid().ok()) {
+        fprintf(stderr, "Failed to initialize credentials.\n");
+        exit(1);
+      }
 
       std::string bucketSuffix = getenv("USER");
       bucketSuffix = "." + bucketSuffix + ".titan-benchmark";
@@ -3863,9 +3863,9 @@ class Benchmark {
         exit(1);
       }
 
-      titandb::TitanFileSystem* tfs;
+      titandb::TitanFileSystemProxy* tfs;
       std::shared_ptr<CloudFileSystem> c(cfs);
-      s = titandb::TitanFileSystem::NewTitanFileSystem(FileSystem::Default(), c,
+      s = titandb::TitanFileSystemProxy::NewTitanFileSystem(FileSystem::Default(), c,
                                                        &tfs);
       if (!s.ok()) {
         fprintf(stderr, "NewTitanFileSystem error %s\n", s.ToString().c_str());

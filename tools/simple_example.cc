@@ -67,8 +67,8 @@ int main() {
 
   std::shared_ptr<rocksdb::CloudFileSystem> blob_cfs(cfs);
   // Create TitanFileSystem
-  rocksdb::titandb::TitanFileSystem *titan_file_system;
-  s = rocksdb::titandb::TitanFileSystem::NewTitanFileSystem(
+  rocksdb::titandb::TitanFileSystemProxy *titan_file_system;
+  s = rocksdb::titandb::TitanFileSystemProxy::NewTitanFileSystem(
       rocksdb::FileSystem::Default(), blob_cfs, &titan_file_system);
   assert(s.ok());
 

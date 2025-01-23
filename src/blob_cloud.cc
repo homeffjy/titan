@@ -15,7 +15,7 @@ Status TitanCloudHelper::InitializeCloudResources(const TitanOptions& options,
                                                   bool* new_db) {
   Status st;
 
-  auto cfs = dynamic_cast<TitanFileSystem*>(options.env->GetFileSystem().get())
+  auto cfs = dynamic_cast<TitanFileSystemProxy*>(options.env->GetFileSystem().get())
                  ->GetCloudFileSystem();
   if (!cfs) {
     return Status::InvalidArgument("Cloud filesystem not properly initialized");
@@ -93,7 +93,7 @@ Status TitanCloudHelper::FinalizeCloudSetup(const TitanOptions& options,
                                             const bool new_db,
                                             const TitanDB* db) {
   Status st;
-  auto cfs = dynamic_cast<TitanFileSystem*>(options.env->GetFileSystem().get())
+  auto cfs = dynamic_cast<TitanFileSystemProxy*>(options.env->GetFileSystem().get())
                  ->GetCloudFileSystem();
   std::string dbid;
   db->GetDbIdentity(dbid);

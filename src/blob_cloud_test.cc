@@ -170,9 +170,9 @@ class BlobCloudTest : public testing::Test {
     ASSERT_OK(CloudFileSystemEnv::NewAwsFileSystem(base_env_->GetFileSystem(),
                                                    cloud_fs_options_,
                                                    options_.info_log, &cfs));
-    titandb::TitanFileSystem* tfs;
+    titandb::TitanFileSystemProxy* tfs;
     auto t = std::shared_ptr<CloudFileSystem>(cfs);
-    ASSERT_OK(titandb::TitanFileSystem::NewTitanFileSystem(
+    ASSERT_OK(titandb::TitanFileSystemProxy::NewTitanFileSystem(
         base_env_->GetFileSystem(), t, &tfs));
     const std::shared_ptr<FileSystem> fs(tfs);
     aenv_ = CloudFileSystemEnv::NewCompositeEnv(base_env_, fs);
@@ -300,14 +300,14 @@ class BlobCloudTest : public testing::Test {
 
   CloudFileSystem* GetCloudFileSystem() const {
     EXPECT_TRUE(aenv_);
-    return dynamic_cast<TitanFileSystem*>(aenv_->GetFileSystem().get())
+    return dynamic_cast<TitanFileSystemProxy*>(aenv_->GetFileSystem().get())
         ->GetCloudFileSystem()
         .get();
   }
   CloudFileSystemImpl* GetCloudFileSystemImpl() const {
     EXPECT_TRUE(aenv_);
     return static_cast<CloudFileSystemImpl*>(
-        dynamic_cast<TitanFileSystem*>(aenv_->GetFileSystem().get())
+        dynamic_cast<TitanFileSystemProxy*>(aenv_->GetFileSystem().get())
             ->GetCloudFileSystem()
             .get());
   }
