@@ -49,6 +49,7 @@ class BlobFileReader {
 
   // TitanStats* stats_;
 
+  // Use rocksdb's FilePrefetchBuffer if filesystem's prefetch not supported
   std::shared_ptr<FilePrefetchBuffer> prefetch_buffer_{nullptr};
 };
 

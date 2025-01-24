@@ -2503,7 +2503,7 @@ class Benchmark {
       }
 
       std::string bucketSuffix = getenv("USER");
-      bucketSuffix = "." + bucketSuffix + ".titan-benchmark";
+      bucketSuffix = "." + bucketSuffix;
       cfs_options_.src_bucket.SetBucketName(bucketSuffix, FLAGS_s3_bucket);
       cfs_options_.src_bucket.SetRegion(FLAGS_s3_region);
       cfs_options_.src_bucket.SetObjectPath(FLAGS_db);

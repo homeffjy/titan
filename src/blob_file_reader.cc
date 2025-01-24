@@ -139,6 +139,7 @@ Status BlobFileReader::Get(const ReadOptions& _options,
   Status s;
   bool prefetched = false;
   if (prefetch_buffer_) {
+    // Filesystem's prefetch not supported, try FilePrefetchBuffer first
     IOOptions io_options;
 
     s = file_->PrepareIOOptions(_options, io_options);
@@ -193,11 +194,11 @@ Status BlobFilePrefetcher::Get(const ReadOptions& options,
         readahead_size_ = std::min(kMaxReadaheadSize, readahead_size_ * 2);
       } else if (!s.IsNotSupported()) {
         return s;
-      }
-      // Create file prefetch buffer if not exists
-      if (!reader_->prefetch_buffer_) {
-        reader_->prefetch_buffer_ =
-            std::make_shared<FilePrefetchBuffer>(readahead_size_, kMaxReadaheadSize);
+      } else if (!reader_->prefetch_buffer_) {
+        // Filesystem's Prefetch not supported, create FilePrefetchBuffer if not
+        // exists
+        reader_->prefetch_buffer_ = std::make_shared<FilePrefetchBuffer>(
+            readahead_size_, kMaxReadaheadSize);
       }
     }
   } else {
