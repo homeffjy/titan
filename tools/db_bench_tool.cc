@@ -12,6 +12,7 @@
 
 #include "blob_file_system.h"
 #include "rocksdb/cloud/cloud_file_system.h"
+#include "titan/statistics.h"
 
 #ifdef GFLAGS
 #ifdef NUMA
@@ -6452,7 +6453,11 @@ int db_bench_tool(int argc, char** argv) {
   }
 #endif  // ROCKSDB_LITE
   if (FLAGS_statistics) {
-    dbstats = rocksdb::CreateDBStatistics();
+    if (!FLAGS_use_titan) {
+      dbstats = rocksdb::CreateDBStatistics();
+    } else {
+      dbstats = titandb::CreateDBStatistics();
+    }
   }
   if (dbstats) {
     dbstats->set_stats_level(static_cast<StatsLevel>(FLAGS_stats_level));
