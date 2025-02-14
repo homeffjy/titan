@@ -3856,6 +3856,11 @@ class Benchmark {
               DBWithColumnFamilies* db) {
     Status s;
     if (FLAGS_use_cloud) {
+      s = CreateLoggerFromOptions(db_name, options, &options.info_log);
+      if (!s.ok()) {
+        fprintf(stderr, "Create logger error %s\n", s.ToString().c_str());
+        exit(1);
+      }
       CloudFileSystem* cfs;
       s = CloudFileSystemEnv::NewAwsFileSystem(
           FileSystem::Default(), cfs_options_, options.info_log, &cfs);
