@@ -2121,6 +2121,7 @@ class Benchmark {
   titandb::TitanOptions
       open_options_;  // keep options around to properly destroy db later
   CloudFileSystemOptions cfs_options_;
+  Aws::SDKOptions aws_options_;
 #ifndef ROCKSDB_LITE
   TraceOptions trace_options_;
   TraceOptions block_cache_trace_options_;
@@ -2454,6 +2455,7 @@ class Benchmark {
         prefix_size_(FLAGS_prefix_size),
         keys_per_prefix_(FLAGS_keys_per_prefix),
         entries_per_batch_(1),
+        aws_options_(Aws::SDKOptions()),
         reads_(FLAGS_reads < 0 ? FLAGS_num : FLAGS_reads),
         read_random_exp_range_(0.0),
         writes_(FLAGS_writes < 0 ? FLAGS_num : FLAGS_writes),
@@ -2495,7 +2497,8 @@ class Benchmark {
     }
 
     if (FLAGS_use_cloud) {
-      Aws::InitAPI(Aws::SDKOptions());
+      aws_options_.httpOptions.installSigPipeHandler = true;
+      Aws::InitAPI(aws_options_);
       // cfs_options_.credentials.InitializeSimple(
       //     getenv("AWS_ACCESS_KEY_ID"), getenv("AWS_SECRET_ACCESS_KEY"));
       if (!cfs_options_.credentials.HasValid().ok()) {
@@ -2556,7 +2559,7 @@ class Benchmark {
       cache_->DisownData();
     }
     if (FLAGS_use_cloud) {
-      Aws::ShutdownAPI(Aws::SDKOptions());
+      Aws::ShutdownAPI(aws_options_);
     }
   }
 
