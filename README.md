@@ -42,6 +42,59 @@ ctest -R titan
 bash scripts/format-diff.sh
 ```
 
+### Titan on S3
+Follow the steps listed in https://github.com/aws/aws-sdk-cpp  to install the c++ AWS sdk.
+```
+# Install dependency
+sudo apt install libcurl4-openssl-dev
+
+git clone --recurse-submodules https://github.com/aws/aws-sdk-cpp
+
+cd aws-sdk-cpp; mkdir build; cd build
+
+# For example
+cmake .. \
+-DCMAKE_BUILD_TYPE=Release \
+-DCMAKE_INSTALL_PREFIX=<path-to-install> \
+-DBUILD_ONLY="s3;kinesis;transfer"
+
+make -j 
+sudo make install
+```
+Follow the steps listed in https://github.com/rockset/rocksdb-cloud/tree/master/cloud to set env variables.
+
+```
+export AWS_ACCESS_KEY_ID=
+export AWS_SECRET_ACCESS_KEY=
+export AWS_SESSION_TOKEN=
+```
+Build Titan on S3
+```
+git clone https://github.com/homeffjy/titan.git
+
+cd titan
+
+git checkout dev-fjy/port-rocksdb-cloud
+
+mkdir build; cd build
+
+# For example
+cmake .. \
+-DCMAKE_BUILD_TYPE=Release \
+-DROCKSDB_GIT_REPO=https://github.com/homeffjy/rocksdb \
+-DROCKSDB_GIT_BRANCH=dev-fjy/port-rocksdb-cloud \
+-DWITH_AWS=ON \
+-DUSE_RTTI=ON
+
+make -j
+```
+Run benchmark with `--use-cloud` to enable s3, `--s3_bucket` to set s3 bucket name, `--s3_region` to set s3 region
+
+You may need to ensure that AWS EC2 and AWS S3 are in the same region to guarantee network bandwidth.
+```
+# For example
+./titandb_bench --use_titan --use_cloud --compression_type=none
+```
 ## Compatibility with RocksDB
 
 Current version of Titan is developed and tested with TiKV's [fork][6.29.tikv] of RocksDB 6.29.
