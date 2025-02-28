@@ -1,11 +1,11 @@
 #include "titan/db.h"
 
-#include "blob_cloud.h"
 #include "blob_file_system.h"
 #include "cloud/db_cloud_impl.h"
 #include "db_impl.h"
 #include "env/composite_env_wrapper.h"
 #include "rocksdb/cloud/cloud_file_system.h"
+#include "titan/blob_cloud.h"
 
 namespace rocksdb {
 namespace titandb {

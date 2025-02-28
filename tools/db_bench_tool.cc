@@ -8,10 +8,10 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include <aws/core/Aws.h>
-#include <blob_cloud.h>
 
 #include "blob_file_system.h"
 #include "rocksdb/cloud/cloud_file_system.h"
+#include "titan/blob_cloud.h"
 #include "titan/statistics.h"
 
 #ifdef GFLAGS
@@ -2120,8 +2120,6 @@ class Benchmark {
   WriteOptions write_options_;
   titandb::TitanOptions
       open_options_;  // keep options around to properly destroy db later
-  CloudFileSystemOptions cfs_options_;
-  Aws::SDKOptions aws_options_;
 #ifndef ROCKSDB_LITE
   TraceOptions trace_options_;
   TraceOptions block_cache_trace_options_;
@@ -2455,7 +2453,6 @@ class Benchmark {
         prefix_size_(FLAGS_prefix_size),
         keys_per_prefix_(FLAGS_keys_per_prefix),
         entries_per_batch_(1),
-        aws_options_(Aws::SDKOptions()),
         reads_(FLAGS_reads < 0 ? FLAGS_num : FLAGS_reads),
         read_random_exp_range_(0.0),
         writes_(FLAGS_writes < 0 ? FLAGS_num : FLAGS_writes),
@@ -2497,21 +2494,9 @@ class Benchmark {
     }
 
     if (FLAGS_use_cloud) {
-      aws_options_.httpOptions.installSigPipeHandler = true;
-      Aws::InitAPI(aws_options_);
-      // cfs_options_.credentials.InitializeSimple(
-      //     getenv("AWS_ACCESS_KEY_ID"), getenv("AWS_SECRET_ACCESS_KEY"));
-      if (!cfs_options_.credentials.HasValid().ok()) {
-        fprintf(stderr, "Failed to initialize credentials.\n");
-        exit(1);
-      }
-
-      std::string bucketSuffix = getenv("USER");
-      bucketSuffix = "." + bucketSuffix;
-      cfs_options_.src_bucket.SetBucketName(bucketSuffix, FLAGS_s3_bucket);
-      cfs_options_.src_bucket.SetRegion(FLAGS_s3_region);
-      cfs_options_.src_bucket.SetObjectPath(FLAGS_db);
-      cfs_options_.dest_bucket = cfs_options_.src_bucket;
+      titandb::TitanCloudHelper::InitializeAWS(open_options_);
+      titandb::TitanCloudHelper::ConfigureBucket(open_options_, FLAGS_s3_bucket,
+                                                 FLAGS_s3_region, FLAGS_db);
     }
 
     std::vector<std::string> files;
@@ -2533,8 +2518,7 @@ class Benchmark {
 #endif  // !ROCKSDB_LITE
       DestroyDB(FLAGS_db, options);
       if (FLAGS_use_cloud) {
-        titandb::TitanCloudHelper::DestroyCloudDB(FLAGS_db, options,
-                                                  cfs_options_);
+        titandb::TitanCloudHelper::DestroyCloudDB(FLAGS_db, options);
       }
       if (!FLAGS_wal_dir.empty()) {
         FLAGS_env->DeleteDir(FLAGS_wal_dir);
@@ -2559,7 +2543,7 @@ class Benchmark {
       cache_->DisownData();
     }
     if (FLAGS_use_cloud) {
-      Aws::ShutdownAPI(aws_options_);
+      titandb::TitanCloudHelper::ShutdownAWS(open_options_);
     }
   }
 
@@ -2950,8 +2934,8 @@ class Benchmark {
             db_.DeleteDBs();
             DestroyDB(FLAGS_db, open_options_);
             if (FLAGS_use_cloud) {
-              titandb::TitanCloudHelper::DestroyCloudDB(FLAGS_db, open_options_,
-                                                        cfs_options_);
+              titandb::TitanCloudHelper::DestroyCloudDB(FLAGS_db,
+                                                        open_options_);
             }
           }
           titandb::TitanOptions options = open_options_;
@@ -2963,7 +2947,7 @@ class Benchmark {
             DestroyDB(GetPathForMultiple(FLAGS_db, i), options);
             if (FLAGS_use_cloud) {
               titandb::TitanCloudHelper::DestroyCloudDB(
-                  GetPathForMultiple(FLAGS_db, i), options, cfs_options_);
+                  GetPathForMultiple(FLAGS_db, i), options);
             }
           }
           multi_dbs_.clear();
@@ -3864,25 +3848,11 @@ class Benchmark {
         fprintf(stderr, "Create logger error %s\n", s.ToString().c_str());
         exit(1);
       }
-      CloudFileSystem* cfs;
-      s = CloudFileSystemEnv::NewAwsFileSystem(
-          FileSystem::Default(), cfs_options_, options.info_log, &cfs);
+      s = titandb::TitanCloudHelper::CreateCloudEnv(options);
       if (!s.ok()) {
-        fprintf(stderr, "NewAwsFileSystem error %s\n", s.ToString().c_str());
+        fprintf(stderr, "Create cloud env error %s\n", s.ToString().c_str());
         exit(1);
       }
-
-      titandb::TitanFileSystemProxy* tfs;
-      std::shared_ptr<CloudFileSystem> c(cfs);
-      s = titandb::TitanFileSystemProxy::NewTitanFileSystem(FileSystem::Default(), c,
-                                                       &tfs);
-      if (!s.ok()) {
-        fprintf(stderr, "NewTitanFileSystem error %s\n", s.ToString().c_str());
-        exit(1);
-      }
-
-      std::shared_ptr<FileSystem> fs(tfs);
-      options.env = NewCompositeEnv(fs).release();
     }
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {
@@ -4015,6 +3985,10 @@ class Benchmark {
         db->db = ptr;
       }
     } else if (FLAGS_use_cloud) {
+      if (!titandb::TitanCloudHelper::IsCloudEnabled(options)) {
+        fprintf(stderr, "Titan cloud is not enabled\n");
+        exit(1);
+      }
       titandb::TitanDB* ptr;
       s = titandb::TitanDB::OpenWithCloud(options, db_name, &ptr);
       if (s.ok()) {

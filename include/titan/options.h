@@ -1,20 +1,30 @@
 #pragma once
+#include <aws/core/Aws.h>
 
 #include <map>
 #include <unordered_map>
 
 #include "rocksdb/advanced_cache.h"
+#include "rocksdb/cloud/cloud_file_system.h"
 #include "rocksdb/options.h"
 
 namespace rocksdb {
 namespace titandb {
 
 struct TitanCloudOptions {
+  bool is_cloud_enabled{false};
+  CloudFileSystemOptions cfs_options;
+  Aws::SDKOptions aws_options;
   std::string persistent_cache_path;
   uint64_t persistent_cache_size_gb{0};
+
+  void InitializeAWS();
+  void ShutdownAWS();
+  void ConfigureBucket(const std::string& bucket_name,
+                       const std::string& region,
+                       const std::string& object_path);
   void Dump(Logger* logger) const;
 };
-
 
 struct TitanDBOptions : public DBOptions {
   // The directory to store data specific to TitanDB alongside with

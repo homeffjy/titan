@@ -1,5 +1,7 @@
 #include "titan/options.h"
 
+#include "rocksdb/status.h"
+
 #ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
 #endif
@@ -15,7 +17,27 @@
 namespace rocksdb {
 namespace titandb {
 
+void TitanCloudOptions::InitializeAWS() {
+  aws_options.httpOptions.installSigPipeHandler = true;
+  Aws::InitAPI(aws_options);
+}
+
+void TitanCloudOptions::ShutdownAWS() {
+  is_cloud_enabled = false;
+  Aws::ShutdownAPI(aws_options);
+}
+
+void TitanCloudOptions::ConfigureBucket(const std::string& bucket_name,
+                                        const std::string& region,
+                                        const std::string& object_path) {
+  cfs_options.src_bucket.SetBucketName(bucket_name, "");
+  cfs_options.src_bucket.SetRegion(region);
+  cfs_options.src_bucket.SetObjectPath(object_path);
+  cfs_options.dest_bucket = cfs_options.src_bucket;
+}
+
 void TitanCloudOptions::Dump(Logger* logger) const {
+  // TODO: add cloud options dump
   TITAN_LOG_HEADER(logger, "TitanCloudOptions.persistent_cache_path   : %s",
                    persistent_cache_path.c_str());
   TITAN_LOG_HEADER(logger,

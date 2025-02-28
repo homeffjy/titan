@@ -1,4 +1,4 @@
-#include "blob_cloud.h"
+#include "titan/blob_cloud.h"
 
 #include <rocksdb/cloud/cloud_storage_provider.h>
 
@@ -9,14 +9,65 @@
 
 namespace rocksdb {
 namespace titandb {
+
+void TitanCloudHelper::InitializeAWS(TitanOptions& options) {
+  options.cloud_options.InitializeAWS();
+}
+
+void TitanCloudHelper::ShutdownAWS(TitanOptions& options) {
+  options.cloud_options.ShutdownAWS();
+}
+
+void TitanCloudHelper::ConfigureBucket(TitanOptions& options,
+                                       const std::string& bucket_name,
+                                       const std::string& region,
+                                       const std::string& object_path) {
+  options.cloud_options.ConfigureBucket(bucket_name, region, object_path);
+}
+
+Status TitanCloudHelper::CreateCloudEnv(TitanOptions& options) {
+  CloudFileSystem* cfs;
+  Status st = CloudFileSystemEnv::NewAwsFileSystem(
+      FileSystem::Default(), options.cloud_options.cfs_options,
+      options.info_log, &cfs);
+  if (!st.ok()) {
+    fprintf(stderr, "NewAwsFileSystem error %s\n", st.ToString().c_str());
+    exit(1);
+  }
+
+  TitanFileSystemProxy* tfs;
+  std::shared_ptr<CloudFileSystem> c(cfs);
+  st = TitanFileSystemProxy::NewTitanFileSystem(FileSystem::Default(), c, &tfs);
+  if (!st.ok()) {
+    fprintf(stderr, "NewTitanFileSystem error %s\n", st.ToString().c_str());
+    exit(1);
+  }
+
+  std::shared_ptr<FileSystem> fs(tfs);
+  options.env = NewCompositeEnv(fs).release();
+
+  options.cloud_options.is_cloud_enabled = true;
+  return st;
+}
+
+bool TitanCloudHelper::IsCloudEnabled(const TitanOptions& options) {
+  return options.cloud_options.is_cloud_enabled;
+}
+
 Status TitanCloudHelper::InitializeCloudResources(const TitanOptions& options,
                                                   const std::string& dbname,
                                                   bool read_only,
                                                   bool* new_db) {
   Status st;
 
-  auto cfs = dynamic_cast<TitanFileSystemProxy*>(options.env->GetFileSystem().get())
-                 ->GetCloudFileSystem();
+  auto tfs =
+      dynamic_cast<TitanFileSystemProxy*>(options.env->GetFileSystem().get());
+  if (!tfs) {
+    return Status::InvalidArgument(
+        "Titan proxy filesystem not properly initialized");
+  }
+
+  auto cfs = tfs->GetCloudFileSystem();
   if (!cfs) {
     return Status::InvalidArgument("Cloud filesystem not properly initialized");
   }
@@ -93,8 +144,9 @@ Status TitanCloudHelper::FinalizeCloudSetup(const TitanOptions& options,
                                             const bool new_db,
                                             const TitanDB* db) {
   Status st;
-  auto cfs = dynamic_cast<TitanFileSystemProxy*>(options.env->GetFileSystem().get())
-                 ->GetCloudFileSystem();
+  auto cfs =
+      dynamic_cast<TitanFileSystemProxy*>(options.env->GetFileSystem().get())
+          ->GetCloudFileSystem();
   std::string dbid;
   db->GetDbIdentity(dbid);
 
@@ -123,13 +175,13 @@ Status TitanCloudHelper::FinalizeCloudSetup(const TitanOptions& options,
   return st;
 }
 
-Status TitanCloudHelper::DestroyCloudDB(
-    const std::string& dbname, const TitanOptions& options,
-    const CloudFileSystemOptions& cfs_options) {
+Status TitanCloudHelper::DestroyCloudDB(const std::string& dbname,
+                                        const TitanOptions& options) {
   // Clean up cloud
   CloudFileSystem* cfs;
   auto status = CloudFileSystemEnv::NewAwsFileSystem(
-      FileSystem::Default(), cfs_options, options.info_log, &cfs);
+      FileSystem::Default(), options.cloud_options.cfs_options,
+      options.info_log, &cfs);
   if (!status.ok()) {
     return status;
   }
