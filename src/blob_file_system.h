@@ -20,7 +20,7 @@ class TitanFileSystemProxy : public FileSystem {
     return cloud_fs_;
   }
 
-  static const char* kClassName() { return "titan-router"; }
+  static const char* kClassName() { return "TitanFileSystemProxy"; }
   const char* Name() const override { return kClassName(); }
 
   IOStatus NewSequentialFile(const std::string& fname,

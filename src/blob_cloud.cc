@@ -4,6 +4,7 @@
 
 #include "blob_file_system.h"
 #include "env/composite_env_wrapper.h"
+#include "util/cast_util.h"
 #include "utilities/persistent_cache/block_cache_tier.h"
 #include "utilities/persistent_cache/persistent_cache_tier.h"
 
@@ -60,14 +61,14 @@ Status TitanCloudHelper::InitializeCloudResources(const TitanOptions& options,
                                                   bool* new_db) {
   Status st;
 
-  auto tfs =
-      dynamic_cast<TitanFileSystemProxy*>(options.env->GetFileSystem().get());
-  if (!tfs) {
+  auto fs = options.env->GetFileSystem();
+  if (fs->Name() != TitanFileSystemProxy::kClassName()) {
     return Status::InvalidArgument(
         "Titan proxy filesystem not properly initialized");
   }
 
-  auto cfs = tfs->GetCloudFileSystem();
+  auto cfs = static_cast_with_check<TitanFileSystemProxy>(fs.get())
+                 ->GetCloudFileSystem();
   if (!cfs) {
     return Status::InvalidArgument("Cloud filesystem not properly initialized");
   }
@@ -144,9 +145,13 @@ Status TitanCloudHelper::FinalizeCloudSetup(const TitanOptions& options,
                                             const bool new_db,
                                             const TitanDB* db) {
   Status st;
-  auto cfs =
-      dynamic_cast<TitanFileSystemProxy*>(options.env->GetFileSystem().get())
-          ->GetCloudFileSystem();
+  auto fs = options.env->GetFileSystem();
+  if (fs->Name() != TitanFileSystemProxy::kClassName()) {
+    return Status::InvalidArgument(
+        "Titan proxy filesystem not properly initialized");
+  }
+  auto cfs = static_cast_with_check<TitanFileSystemProxy>(fs.get())
+                 ->GetCloudFileSystem();
   std::string dbid;
   db->GetDbIdentity(dbid);
 
