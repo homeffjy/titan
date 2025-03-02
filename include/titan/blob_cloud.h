@@ -16,7 +16,7 @@ class TitanCloudHelper {
                               const std::string& region,
                               const std::string& object_path);
 
-  static Status CreateCloudEnv(TitanOptions& options);
+  static Status CreateCloudEnv(TitanOptions& options, std::shared_ptr<Logger> logger);
 
   static bool IsCloudEnabled(const TitanOptions& options);
 

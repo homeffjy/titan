@@ -26,11 +26,11 @@ void TitanCloudHelper::ConfigureBucket(TitanOptions& options,
   options.cloud_options.ConfigureBucket(bucket_name, region, object_path);
 }
 
-Status TitanCloudHelper::CreateCloudEnv(TitanOptions& options) {
+Status TitanCloudHelper::CreateCloudEnv(TitanOptions& options,
+                                        std::shared_ptr<Logger> logger) {
   CloudFileSystem* cfs;
   Status st = CloudFileSystemEnv::NewAwsFileSystem(
-      FileSystem::Default(), options.cloud_options.cfs_options,
-      options.info_log, &cfs);
+      FileSystem::Default(), options.cloud_options.cfs_options, logger, &cfs);
   if (!st.ok()) {
     fprintf(stderr, "NewAwsFileSystem error %s\n", st.ToString().c_str());
     exit(1);

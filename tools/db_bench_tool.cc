@@ -3848,7 +3848,7 @@ class Benchmark {
         fprintf(stderr, "Create logger error %s\n", s.ToString().c_str());
         exit(1);
       }
-      s = titandb::TitanCloudHelper::CreateCloudEnv(options);
+      s = titandb::TitanCloudHelper::CreateCloudEnv(options, options.info_log);
       if (!s.ok()) {
         fprintf(stderr, "Create cloud env error %s\n", s.ToString().c_str());
         exit(1);
