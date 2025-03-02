@@ -26,8 +26,8 @@ void TitanCloudHelper::ConfigureBucket(TitanOptions& options,
   options.cloud_options.ConfigureBucket(bucket_name, region, object_path);
 }
 
-Status TitanCloudHelper::CreateCloudEnv(TitanOptions& options,
-                                        std::shared_ptr<Logger> logger) {
+Env* TitanCloudHelper::CreateCloudEnv(TitanOptions& options,
+                                      std::shared_ptr<Logger> logger) {
   CloudFileSystem* cfs;
   Status st = CloudFileSystemEnv::NewAwsFileSystem(
       FileSystem::Default(), options.cloud_options.cfs_options, logger, &cfs);
@@ -48,7 +48,7 @@ Status TitanCloudHelper::CreateCloudEnv(TitanOptions& options,
   options.env = NewCompositeEnv(fs).release();
 
   options.cloud_options.is_cloud_enabled = true;
-  return st;
+  return options.env;
 }
 
 bool TitanCloudHelper::IsCloudEnabled(const TitanOptions& options) {
