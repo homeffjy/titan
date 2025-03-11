@@ -22,8 +22,13 @@ void TitanCloudHelper::ShutdownAWS(TitanOptions& options) {
 void TitanCloudHelper::ConfigureBucket(TitanOptions& options,
                                        const std::string& bucket_name,
                                        const std::string& region,
-                                       const std::string& object_path) {
-  options.cloud_options.ConfigureBucket(bucket_name, region, object_path);
+                                       const std::string& object_path,
+                                       const std::string& aws_access_key_id,
+                                       const std::string& aws_secret_key,
+                                       const std::string& aws_session_token) {
+  options.cloud_options.ConfigureBucket(bucket_name, region, object_path,
+                                        aws_access_key_id, aws_secret_key,
+                                        aws_session_token);
 }
 
 Env* TitanCloudHelper::CreateCloudEnv(TitanOptions& options,

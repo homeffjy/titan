@@ -769,6 +769,12 @@ DEFINE_string(s3_bucket, "titan-benchmark", "S3 bucket name");
 
 DEFINE_string(s3_region, "ap-northeast-2", "S3 region");
 
+DEFINE_string(aws_access_key_id, "", "AWS access key id");
+
+DEFINE_string(aws_secret_key, "", "AWS secret key");
+
+DEFINE_string(aws_session_token, "", "AWS session token");
+
 DEFINE_bool(titan_level_merge, false, "Enable Titan level merge.");
 
 DEFINE_bool(titan_range_merge, false, "Enable Titan range merge.");
@@ -2495,8 +2501,10 @@ class Benchmark {
 
     if (FLAGS_use_cloud) {
       titandb::TitanCloudHelper::InitializeAWS(open_options_);
-      titandb::TitanCloudHelper::ConfigureBucket(open_options_, FLAGS_s3_bucket,
-                                                 FLAGS_s3_region, FLAGS_db);
+      titandb::TitanCloudHelper::ConfigureBucket(
+          open_options_, FLAGS_s3_bucket, FLAGS_s3_region, FLAGS_db,
+          FLAGS_aws_access_key_id, FLAGS_aws_secret_key,
+          FLAGS_aws_session_token);
     }
 
     std::vector<std::string> files;

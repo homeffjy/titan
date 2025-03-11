@@ -29,7 +29,18 @@ void TitanCloudOptions::ShutdownAWS() {
 
 void TitanCloudOptions::ConfigureBucket(const std::string& bucket_name,
                                         const std::string& region,
-                                        const std::string& object_path) {
+                                        const std::string& object_path,
+                                        const std::string& aws_access_key_id,
+                                        const std::string& aws_secret_key,
+                                        const std::string& aws_session_token) {
+  cfs_options.credentials.InitializeSimple(aws_access_key_id, aws_secret_key,
+                                           aws_session_token);
+  if (!cfs_options.credentials.HasValid().ok()) {
+    fprintf(stderr,
+            "Please set aws_access_key_id and aws_secret_key with cloud "
+            "credentials");
+    exit(1);  
+  }
   cfs_options.src_bucket.SetBucketName(bucket_name, "");
   cfs_options.src_bucket.SetRegion(region);
   cfs_options.src_bucket.SetObjectPath(object_path);
