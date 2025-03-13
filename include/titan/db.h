@@ -37,6 +37,10 @@ class TitanDB : public StackableDB {
                               std::vector<ColumnFamilyHandle*>* handles,
                               TitanDB** db, bool read_only = false);
 
+  static Status ListColumnFamilies(const TitanDBOptions& db_options,
+                                   const std::string& name,
+                                   std::vector<std::string>* column_families);
+
   TitanDB() : StackableDB(nullptr) {}
 
   using StackableDB::CreateColumnFamily;

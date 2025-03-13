@@ -90,5 +90,30 @@ Status TitanDB::OpenWithCloud(const TitanOptions& options,
   return s;
 }
 
+Status TitanDB::ListColumnFamilies(const TitanDBOptions& db_options,
+                                   const std::string& name,
+                                   std::vector<std::string>* column_families) {
+  auto st = Status::OK();
+  if (db_options.cloud_options.is_cloud_enabled) {
+    auto cfs = static_cast_with_check<CloudFileSystem>(
+        db_options.env->GetFileSystem().get());
+    assert(cfs);
+
+    cfs->GetBaseFileSystem()->CreateDirIfMissing(name, IOOptions(),
+                                                 nullptr /*dbg*/);
+
+    st = cfs->SanitizeLocalDirectory(db_options, name, false);
+    if (st.ok()) {
+      st = cfs->LoadCloudManifest(name, false);
+    }
+  }
+  if (st.ok()) {
+    st = status_to_io_status(
+        DB::ListColumnFamilies(db_options, name, column_families));
+  }
+
+  return st;
+}
+
 }  // namespace titandb
 }  // namespace rocksdb
