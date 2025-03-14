@@ -95,12 +95,20 @@ Status TitanDB::ListColumnFamilies(const TitanDBOptions& db_options,
                                    std::vector<std::string>* column_families) {
   auto st = Status::OK();
   if (db_options.cloud_options.is_cloud_enabled) {
-    auto cfs = static_cast_with_check<CloudFileSystem>(
-        db_options.env->GetFileSystem().get());
-    assert(cfs);
+    auto fs = db_options.env->GetFileSystem();
+    if (fs->Name() != TitanFileSystemProxy::kClassName()) {
+      return Status::InvalidArgument(
+          "TitanFileSystemProxy not properly initialized");
+    }
 
-    cfs->GetBaseFileSystem()->CreateDirIfMissing(name, IOOptions(),
-                                                 nullptr /*dbg*/);
+    auto cfs = static_cast_with_check<TitanFileSystemProxy>(fs.get())
+                   ->GetCloudFileSystem();
+    if (!cfs) {
+      return Status::InvalidArgument(
+          "Cloud filesystem not properly initialized");
+    }
+
+    cfs->CreateDirIfMissing(name, IOOptions(), nullptr /*dbg*/);
 
     st = cfs->SanitizeLocalDirectory(db_options, name, false);
     if (st.ok()) {
