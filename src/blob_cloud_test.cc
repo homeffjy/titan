@@ -4,6 +4,8 @@
 
 #ifdef USE_AWS
 
+#include "titan/blob_cloud.h"
+
 #include <aws/core/Aws.h>
 
 #include <algorithm>
@@ -58,11 +60,12 @@ class BlobCloudTest : public testing::Test {
     base_env_ = Env::Default();
     dbname_ = test::TmpDir() + "/blob_cloud-" + test_id_;
     clone_dir_ = test::TmpDir() + "/ctest-" + test_id_;
-    cloud_fs_options_.TEST_Initialize("titan-test.", dbname_);
-    cloud_fs_options_.use_aws_transfer_manager = true;
+    options_.cloud_options.cfs_options.TEST_Initialize("titan-test.", dbname_);
+    options_.cloud_options.cfs_options.use_aws_transfer_manager = true;
     // To catch any possible file deletion bugs, cloud files are deleted
     // right away
-    cloud_fs_options_.cloud_file_deletion_delay = std::chrono::seconds(0);
+    options_.cloud_options.cfs_options.cloud_file_deletion_delay =
+        std::chrono::seconds(0);
 
     options_.dirname = dbname_ + "/titandb";
     options_.create_if_missing = true;
@@ -88,13 +91,13 @@ class BlobCloudTest : public testing::Test {
     ASSERT_TRUE(!aenv_);
 
     // check cloud credentials
-    ASSERT_TRUE(cloud_fs_options_.credentials.HasValid().ok());
+    ASSERT_TRUE(options_.cloud_options.cfs_options.credentials.HasValid().ok());
 
     CloudFileSystem* afs;
     // create a dummy aws env
-    ASSERT_OK(CloudFileSystemEnv::NewAwsFileSystem(base_env_->GetFileSystem(),
-                                                   cloud_fs_options_,
-                                                   options_.info_log, &afs));
+    ASSERT_OK(CloudFileSystemEnv::NewAwsFileSystem(
+        base_env_->GetFileSystem(), options_.cloud_options.cfs_options,
+        options_.info_log, &afs));
     ASSERT_NE(afs, nullptr);
     // delete all pre-existing contents from the bucket
     auto st = afs->GetStorageProvider()->EmptyBucket(afs->GetSrcBucketName(),
@@ -150,11 +153,12 @@ class BlobCloudTest : public testing::Test {
 
   virtual ~BlobCloudTest() {
     // Cleanup the cloud bucket
-    if (!cloud_fs_options_.src_bucket.GetBucketName().empty()) {
+    if (!options_.cloud_options.cfs_options.src_bucket.GetBucketName()
+             .empty()) {
       CloudFileSystem* afs;
       Status st = CloudFileSystemEnv::NewAwsFileSystem(
-          base_env_->GetFileSystem(), cloud_fs_options_, options_.info_log,
-          &afs);
+          base_env_->GetFileSystem(), options_.cloud_options.cfs_options,
+          options_.info_log, &afs);
       if (st.ok()) {
         afs->GetStorageProvider()->EmptyBucket(afs->GetSrcBucketName(),
                                                dbname_);
@@ -163,19 +167,6 @@ class BlobCloudTest : public testing::Test {
     }
 
     CloseDB();
-  }
-
-  void CreateCloudEnv() {
-    CloudFileSystem* cfs;
-    ASSERT_OK(CloudFileSystemEnv::NewAwsFileSystem(base_env_->GetFileSystem(),
-                                                   cloud_fs_options_,
-                                                   options_.info_log, &cfs));
-    titandb::TitanFileSystemProxy* tfs;
-    auto t = std::shared_ptr<CloudFileSystem>(cfs);
-    ASSERT_OK(titandb::TitanFileSystemProxy::NewTitanFileSystem(
-        base_env_->GetFileSystem(), t, &tfs));
-    const std::shared_ptr<FileSystem> fs(tfs);
-    aenv_ = CloudFileSystemEnv::NewCompositeEnv(base_env_, fs);
   }
 
   // Open database via the cloud interface
@@ -196,11 +187,11 @@ class BlobCloudTest : public testing::Test {
 
   void OpenWithColumnFamilies(const std::vector<std::string>& cfs,
                               std::vector<ColumnFamilyHandle*>* handles) {
-    ASSERT_TRUE(cloud_fs_options_.credentials.HasValid().ok());
+    ASSERT_TRUE(options_.cloud_options.cfs_options.credentials.HasValid().ok());
 
     // Create new AWS env
-    CreateCloudEnv();
-    options_.env = aenv_.get();
+    aenv_ = std::unique_ptr<Env>(
+        TitanCloudHelper::CreateCloudEnv(options_, base_env_));
     // Sleep for a second because S3 is eventual consistency.
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
@@ -218,8 +209,8 @@ class BlobCloudTest : public testing::Test {
   // Try to open and return status
   Status checkOpen() {
     // Create new AWS env
-    CreateCloudEnv();
-    options_.env = aenv_.get();
+    aenv_ = std::unique_ptr<Env>(
+        TitanCloudHelper::CreateCloudEnv(options_, base_env_));
     // Sleep for a second because S3 is eventual consistency.
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
@@ -388,7 +379,6 @@ class BlobCloudTest : public testing::Test {
   TitanOptions options_;
   std::string dbname_;
   std::string clone_dir_;
-  CloudFileSystemOptions cloud_fs_options_;
   std::string dbid_;
   TitanDB* db_;
   std::unique_ptr<Env> aenv_;

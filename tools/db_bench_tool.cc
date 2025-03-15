@@ -3851,12 +3851,7 @@ class Benchmark {
               DBWithColumnFamilies* db) {
     Status s;
     if (FLAGS_use_cloud) {
-      s = CreateLoggerFromOptions(db_name, options, &options.info_log);
-      if (!s.ok()) {
-        fprintf(stderr, "Create logger error %s\n", s.ToString().c_str());
-        exit(1);
-      }
-      titandb::TitanCloudHelper::CreateCloudEnv(options, options.info_log);
+      titandb::TitanCloudHelper::CreateCloudEnv(options, FLAGS_env);
     }
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {

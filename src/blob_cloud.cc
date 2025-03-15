@@ -4,6 +4,7 @@
 
 #include "blob_file_system.h"
 #include "env/composite_env_wrapper.h"
+#include "rocksdb/cloud/cloud_file_system.h"
 #include "util/cast_util.h"
 #include "utilities/persistent_cache/block_cache_tier.h"
 #include "utilities/persistent_cache/persistent_cache_tier.h"
@@ -31,11 +32,15 @@ void TitanCloudHelper::ConfigureBucket(TitanOptions& options,
                                         aws_session_token);
 }
 
-Env* TitanCloudHelper::CreateCloudEnv(TitanOptions& options,
-                                      std::shared_ptr<Logger> logger) {
+Env* TitanCloudHelper::CreateCloudEnv(TitanOptions& options, Env* base_env) {
+  if (!options.info_log) {
+    CreateLoggerFromOptions(options.dirname, options, &options.info_log);
+  }
+
   CloudFileSystem* cfs;
   Status st = CloudFileSystemEnv::NewAwsFileSystem(
-      FileSystem::Default(), options.cloud_options.cfs_options, logger, &cfs);
+      base_env->GetFileSystem(), options.cloud_options.cfs_options,
+      options.info_log, &cfs);
   if (!st.ok()) {
     fprintf(stderr, "NewAwsFileSystem error %s\n", st.ToString().c_str());
     exit(1);
@@ -43,14 +48,15 @@ Env* TitanCloudHelper::CreateCloudEnv(TitanOptions& options,
 
   TitanFileSystemProxy* tfs;
   std::shared_ptr<CloudFileSystem> c(cfs);
-  st = TitanFileSystemProxy::NewTitanFileSystem(FileSystem::Default(), c, &tfs);
+  st = TitanFileSystemProxy::NewTitanFileSystem(base_env->GetFileSystem(), c,
+                                                &tfs);
   if (!st.ok()) {
     fprintf(stderr, "NewTitanFileSystem error %s\n", st.ToString().c_str());
     exit(1);
   }
 
   std::shared_ptr<FileSystem> fs(tfs);
-  options.env = NewCompositeEnv(fs).release();
+  options.env = CloudFileSystemEnv::NewCompositeEnv(base_env, fs).release();
 
   options.cloud_options.is_cloud_enabled = true;
   return options.env;

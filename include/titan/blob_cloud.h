@@ -19,8 +19,7 @@ class TitanCloudHelper {
                               const std::string& aws_secret_key,
                               const std::string& aws_session_token = "");
 
-  static Env* CreateCloudEnv(TitanOptions& options,
-                             std::shared_ptr<Logger> logger);
+  static Env* CreateCloudEnv(TitanOptions& options, Env* base_env);
 
   static bool IsCloudEnabled(const TitanOptions& options);
 
