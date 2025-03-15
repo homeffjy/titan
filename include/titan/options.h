@@ -27,6 +27,11 @@ struct TitanCloudOptions {
                        const std::string& aws_secret_key,
                        const std::string& aws_session_token = "");
   void Dump(Logger* logger) const;
+
+  TitanCloudOptions() {
+    // experimental option disabled by default
+    cfs_options.roll_cloud_manifest_on_open = false;
+  }
 };
 
 struct TitanDBOptions : public DBOptions {

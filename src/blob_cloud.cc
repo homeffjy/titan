@@ -166,8 +166,7 @@ Status TitanCloudHelper::FinalizeCloudSetup(const TitanOptions& options,
   std::string dbid;
   db->GetDbIdentity(dbid);
 
-  if (new_db && st.ok() && cfs->HasDestBucket() &&
-      cfs->GetCloudFileSystemOptions().roll_cloud_manifest_on_open) {
+  if (new_db && st.ok() && cfs->HasDestBucket()) {
     // This is a new database, upload the CLOUDMANIFEST after all MANIFEST file
     // was already uploaded. It is at this point we consider the database
     // committed in the cloud.

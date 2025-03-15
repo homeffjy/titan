@@ -305,26 +305,6 @@ class BlobCloudTest : public testing::Test {
 
   DBImpl* GetDBImpl() const { return static_cast<DBImpl*>(db_->GetBaseDB()); }
 
-  Status SwitchToNewCookie(std::string new_cookie) {
-    CloudManifestDelta delta{db_->GetNextFileNumber(), new_cookie};
-    return ApplyCMDeltaToCloudDB(delta);
-  }
-
-  Status ApplyCMDeltaToCloudDB(const CloudManifestDelta& delta) {
-    auto st = GetCloudFileSystem()->RollNewCookie(dbname_, delta.epoch, delta);
-    if (!st.ok()) {
-      return st;
-    }
-    bool applied = false;
-    st = GetCloudFileSystem()->ApplyCloudManifestDelta(delta, &applied);
-    assert(applied);
-    if (!st.ok()) {
-      return st;
-    }
-    db_->NewManifestOnNextUpdate();
-    return st;
-  }
-
  protected:
   void WaitUntilNoScheduledJobs() {
     while (true) {
@@ -473,6 +453,52 @@ TEST_F(BlobCloudTest, LiveFilesOfDroppedCFTest) {
   ASSERT_OK(
       GetCloudFileSystem()->FindAllLiveFiles(dbname_, &tablefiles, &manifest));
   EXPECT_TRUE(tablefiles.empty());
+  CloseDB(&handles);
+}
+
+TEST_F(BlobCloudTest, ColumnFamilies) {
+  std::vector<ColumnFamilyHandle*> handles;
+  // Put one key-value
+  OpenDB(&handles);
+
+  CreateColumnFamilies({"cf1", "cf2"}, &handles);
+
+  ASSERT_OK(db_->Put(WriteOptions(), handles[0], "hello", "a"));
+  ASSERT_OK(db_->Put(WriteOptions(), handles[1], "hello", "b"));
+  ASSERT_OK(db_->Put(WriteOptions(), handles[2], "hello", "c"));
+  ASSERT_OK(db_->Flush({}, handles[0]));
+  ASSERT_OK(db_->Flush({}, handles[1]));
+  ASSERT_OK(db_->Flush({}, handles[2]));
+
+  auto validate = [&]() {
+    std::string value;
+    ASSERT_OK(db_->Get(ReadOptions(), handles[0], "hello", &value));
+    ASSERT_EQ(value, "a");
+    ASSERT_OK(db_->Get(ReadOptions(), handles[1], "hello", &value));
+    ASSERT_EQ(value, "b");
+    ASSERT_OK(db_->Get(ReadOptions(), handles[2], "hello", &value));
+    ASSERT_EQ(value, "c");
+  };
+
+  validate();
+
+  CloseDB(&handles);
+
+  // not destory local state because in blob cloud test sst remains in local
+  // DestroyDir(dbname_);
+
+  // new cloud env
+  aenv_ = std::unique_ptr<Env>(
+      TitanCloudHelper::CreateCloudEnv(options_, base_env_));
+
+  std::vector<std::string> families;
+  ASSERT_OK(TitanDB::ListColumnFamilies(options_, dbname_, &families));
+  std::sort(families.begin(), families.end());
+  ASSERT_TRUE(families == std::vector<std::string>(
+                              {"cf1", "cf2", kDefaultColumnFamilyName}));
+
+  OpenWithColumnFamilies({kDefaultColumnFamilyName, "cf1", "cf2"}, &handles);
+  validate();
   CloseDB(&handles);
 }
 
