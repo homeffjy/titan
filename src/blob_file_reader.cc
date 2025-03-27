@@ -140,14 +140,8 @@ Status BlobFileReader::Get(const ReadOptions& _options,
   bool prefetched = false;
   if (prefetch_buffer_) {
     // Filesystem's prefetch not supported, try FilePrefetchBuffer first
-    IOOptions io_options;
-
-    s = file_->PrepareIOOptions(_options, io_options);
-    if (!s.ok()) {
-      return s;
-    }
     prefetched = prefetch_buffer_->TryReadFromCache(
-        io_options, file_.get(), handle.offset, handle.size, &blob, &s);
+        IOOptions(), file_.get(), handle.offset, handle.size, &blob, &s);
     if (!s.ok()) {
       return s;
     }
@@ -159,11 +153,12 @@ Status BlobFileReader::Get(const ReadOptions& _options,
     if (!s.ok()) {
       return s;
     }
-    if (handle.size != static_cast<uint64_t>(blob.size())) {
-      return Status::Corruption(
-          "ReadRecord actual size: " + std::to_string(blob.size()) +
-          " not equal to blob size " + std::to_string(handle.size));
-    }
+  }
+
+  if (handle.size != static_cast<uint64_t>(blob.size())) {
+    return Status::Corruption(
+        "ReadRecord actual size: " + std::to_string(blob.size()) +
+        " not equal to blob size " + std::to_string(handle.size));
   }
 
   BlobDecoder decoder(uncompression_dict_ == nullptr
