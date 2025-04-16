@@ -7,6 +7,11 @@
 #include <cinttypes>
 #include <memory>
 
+#include <thread>      // std::this_thread::get_id()
+#include <functional>  // std::hash
+#include <string>      // std::string
+#include <iostream>
+
 #include "file/file_util.h"
 #include "file/filename.h"
 #include "file/readahead_raf.h"
@@ -30,7 +35,6 @@ Status NewBlobFileReader(uint64_t file_number, uint64_t readahead_size,
   Status s = env->GetFileSystem()->NewRandomAccessFile(
       file_name, FileOptions(env_options), &file, nullptr /*dbg*/);
   if (!s.ok()) return s;
-
   if (readahead_size > 0) {
     file = NewReadaheadRandomAccessFile(std::move(file), readahead_size);
   }
@@ -72,11 +76,11 @@ Status BlobFileReader::Open(const TitanCFOptions& options,
                             std::unique_ptr<RandomAccessFileReader> file,
                             uint64_t file_size,
                             std::unique_ptr<BlobFileReader>* result,
-                            TitanStats* stats) {
+                            TitanStats* stats,
+                            bool cloud_enabled) {
   if (file_size < BlobFileFooter::kEncodedLength) {
     return Status::Corruption("file is too short to be a blob file");
   }
-
   BlobFileHeader header;
   Status s = ReadHeader(file, &header);
   if (!s.ok()) {
@@ -98,6 +102,8 @@ Status BlobFileReader::Open(const TitanCFOptions& options,
   }
 
   auto reader = new BlobFileReader(options, std::move(file), stats);
+  reader->cloud_enabled = cloud_enabled;
+  reader->file_size_=file_size;
   reader->footer_ = footer;
   if (header.flags & BlobFileHeader::kHasUncompressionDictionary) {
     s = InitUncompressionDict(footer, reader->file_.get(),
@@ -123,6 +129,32 @@ Status BlobFileReader::ReadHeader(std::unique_ptr<RandomAccessFileReader>& file,
   return s;
 }
 
+Status BlobFileReader::LoadEntireBlobFile() {
+  // if (file_loaded_.load(std::memory_order_acquire)) {
+  //   return Status::OK();
+  // }
+
+
+  std::string* raw_buffer = new std::string;
+  raw_buffer->resize(file_size_);
+
+  Slice result;
+  Status s = file_->Read(IOOptions(), 0 /*offset*/, file_size_,
+                  &result, reinterpret_cast<char*>(&(*raw_buffer)[0]),nullptr /*aligned_buf*/);
+  
+  if (!s.ok()) {
+    delete raw_buffer;
+    return s;
+  }
+
+  file_content_ = std::shared_ptr<std::string>(raw_buffer);
+  // file_loaded_.store(true, std::memory_order_release);
+  printf("[Store Success] Thread ID: %zu, File: %s. \n",
+    std::hash<std::thread::id>{}(std::this_thread::get_id()),
+    file_->file_name().c_str());
+  return Status::OK();
+}
+
 BlobFileReader::BlobFileReader(const TitanCFOptions& options,
                                std::unique_ptr<RandomAccessFileReader> file,
                                TitanStats* _stats)
@@ -132,35 +164,46 @@ Status BlobFileReader::Get(const ReadOptions& _options,
                            const BlobHandle& handle, BlobRecord* record,
                            OwnedSlice* buffer) {
   TEST_SYNC_POINT("BlobFileReader::Get");
+  Status s;
   Slice blob;
   CacheAllocationPtr ubuf =
-      AllocateBlock(handle.size, options_.memory_allocator());
-
-  Status s;
-  bool prefetched = false;
-  if (prefetch_buffer_) {
-    // Filesystem's prefetch not supported, try FilePrefetchBuffer first
-    prefetched = prefetch_buffer_->TryReadFromCache(
-        IOOptions(), file_.get(), handle.offset, handle.size, &blob, &s);
-    if (!s.ok()) {
-      return s;
+  AllocateBlock(handle.size, options_.memory_allocator());
+  if (cloud_enabled) {
+    try {
+      std::call_once(load_once_flag_, [&]() {
+        Status status = LoadEntireBlobFile();
+        if (!status.ok()) {
+          throw std::runtime_error(status.ToString());
+        }
+      });
+    } catch (const std::exception& e) {
+      return Status::IOError("LoadEntireBlobFile failed", e.what());
+    }
+    if (file_content_ == nullptr) {
+      printf("[SEGV Risk] file_content_ is nullptr, offset = %" PRIu64 ", size = %" PRIu64 "\n",
+             handle.offset, handle.size);
+      s = file_->Read(IOOptions(), handle.offset, handle.size, &blob, ubuf.get(),nullptr /*aligned_buf*/);
+      if (!s.ok()) {
+        return s;
+      }      
+    }
+    else{
+      if (handle.offset + handle.size > file_content_->size()) {
+        return Status::Corruption("Blob offset out of bound");
+      }
+      const char* data_ptr = file_content_->data() + handle.offset;
+      Slice blob_(data_ptr, handle.size);
+      memcpy(ubuf.get(), blob_.data(), handle.size);
+      blob = Slice(reinterpret_cast<char*>(ubuf.get()), handle.size);
     }
   }
-
-  if (!prefetched) {
+  else{
     s = file_->Read(IOOptions(), handle.offset, handle.size, &blob, ubuf.get(),
-                    nullptr /*aligned_buf*/);
+                nullptr /*aligned_buf*/);
     if (!s.ok()) {
       return s;
     }
   }
-
-  if (handle.size != static_cast<uint64_t>(blob.size())) {
-    return Status::Corruption(
-        "ReadRecord actual size: " + std::to_string(blob.size()) +
-        " not equal to blob size " + std::to_string(handle.size));
-  }
-
   BlobDecoder decoder(uncompression_dict_ == nullptr
                           ? &UncompressionDict::GetEmptyDict()
                           : uncompression_dict_.get());
@@ -189,11 +232,8 @@ Status BlobFilePrefetcher::Get(const ReadOptions& options,
         readahead_size_ = std::min(kMaxReadaheadSize, readahead_size_ * 2);
       } else if (!s.IsNotSupported()) {
         return s;
-      } else if (!reader_->prefetch_buffer_) {
-        // Filesystem's Prefetch not supported, create FilePrefetchBuffer if not
-        // exists
-        reader_->prefetch_buffer_ = std::make_shared<FilePrefetchBuffer>(
-            readahead_size_, kMaxReadaheadSize);
+      } else {
+        reader_->cloud_enabled = true;
       }
     }
   } else {
@@ -201,7 +241,6 @@ Status BlobFilePrefetcher::Get(const ReadOptions& options,
     readahead_size_ = 0;
     readahead_limit_ = 0;
   }
-
   return reader_->Get(options, handle, record, buffer);
 }
 

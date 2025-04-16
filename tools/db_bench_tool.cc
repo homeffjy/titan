@@ -791,7 +791,7 @@ DEFINE_int32(titan_max_background_gc,
              rocksdb::titandb::TitanOptions().max_background_gc,
              "Titan max background GC threads.");
 
-DEFINE_int64(titan_blob_cache_size, 0,
+DEFINE_int64(titan_blob_cache_size, 512* 1024 * 1024 ,
              "Size of Titan blob cache. Disabled by default.");
 
 DEFINE_uint64(blob_db_bytes_per_sync, 0, "Bytes to sync blob file at.");

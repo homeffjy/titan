@@ -21,7 +21,8 @@ class BlobFileReader {
                      std::unique_ptr<RandomAccessFileReader> file,
                      uint64_t file_size,
                      std::unique_ptr<BlobFileReader>* result,
-                     TitanStats* stats);
+                     TitanStats* stats,
+                     bool cloud_enabled);
 
   // Gets the blob record pointed by the handle in this file. The data
   // of the record is stored in the value slice underlying, so the value slice
@@ -47,10 +48,18 @@ class BlobFileReader {
 
   std::unique_ptr<UncompressionDict> uncompression_dict_ = nullptr;
 
+  uint64_t prefetch_buffer_hit_count = 0;
+  uint64_t file_size_ = 0;
+  std::atomic<bool> file_loaded_{false};
+  std::mutex file_load_mutex_;
+  std::shared_ptr<std::string> file_content_;
+  bool cloud_enabled = false;
+  Status LoadEntireBlobFile();  // 内部用于一次性加载 Blob 文件
+  std::once_flag load_once_flag_;     // 保证 LoadEntireBlobFile 只执行一次
   // TitanStats* stats_;
-
-  // Use rocksdb's FilePrefetchBuffer if filesystem's prefetch not supported
-  std::shared_ptr<FilePrefetchBuffer> prefetch_buffer_{nullptr};
+  // std::mutex prefetch_mutex_;
+  // // Use rocksdb's FilePrefetchBuffer if filesystem's prefetch not supported
+  // std::shared_ptr<FilePrefetchBuffer> prefetch_buffer_{nullptr};
 };
 
 // Performs readahead on continuous reads.

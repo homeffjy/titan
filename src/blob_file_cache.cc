@@ -3,6 +3,11 @@
 #include "file/filename.h"
 #include "rocksdb/advanced_cache.h"
 
+#include <thread>      // std::this_thread::get_id()
+#include <functional>  // std::hash
+#include <string>      // std::string
+#include <iostream>
+
 #include "util.h"
 
 namespace rocksdb {
@@ -66,6 +71,7 @@ Status BlobFileCache::GetBlobFileReaderHandle(uint64_t file_number,
   *handle = cache_->Lookup(cache_key);
   if (*handle) {
     // TODO: add file reader cache hit/miss metrics
+    // printf("[Blob Cache Hit], file_number = %" PRIu64 " .\n", file_number);
     return s;
   }
   std::unique_ptr<RandomAccessFileReader> file;
@@ -87,8 +93,9 @@ Status BlobFileCache::GetBlobFileReaderHandle(uint64_t file_number,
   }
 
   std::unique_ptr<BlobFileReader> reader;
+  bool cloud_enable = db_options_.cloud_options.is_cloud_enabled;
   s = BlobFileReader::Open(cf_options_, std::move(file), file_size, &reader,
-                           stats_);
+                           stats_, cloud_enable);
   if (!s.ok()) return s;
 
   cache_->Insert(cache_key, reader.release(), &kBlobFileReaderCacheItemHelper,
